@@ -162,7 +162,7 @@ else
             <CardPainel Titulo="Proventos" Subtitulo="valores brutos" Class="wal-s6" SemEspacamento="true">
                 <div class="wal-card-corpo">
                     <MudChart T="double" ChartType="ChartType.StackedBar" ChartSeries="@seriesProventos" ChartLabels="@anosProventos"
-                              ChartOptions="@opcoesProventos" Height="200px" Width="100%" />
+                              ChartOptions="@opcoesProventos" Height="200px" Width="100%" MatchBoundsToSize="true" />
                 </div>
                 <div class="wal-rolagem">
                     <MudSimpleTable Dense="true" Elevation="0" Class="wal-tabela">
@@ -300,7 +300,7 @@ else
         {
             anosProventos = detalhe.ProventosPorAno.Select(a => a.Inicio.Year.ToString()).ToArray();
             ChartSeries<double> Serie(string nome, Func<ProventosPeriodoResponse, decimal> valor) =>
-                new() { Name = nome, Data = new ChartData<double>(detalhe.ProventosPorAno.Select(a => (double)valor(a)).ToList()) };
+                new() { Name = nome, Data = new ChartData<double>(detalhe.ProventosPorAno.Select(a => (double)Math.Round(valor(a), 2)).ToList()) };
             seriesProventos = [Serie("Dividendos", a => a.Dividendos), Serie("JCP", a => a.Jcp), Serie("Rendimentos", a => a.Rendimentos)];
         }
     }

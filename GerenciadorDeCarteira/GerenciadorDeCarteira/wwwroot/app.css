@@ -990,3 +990,16 @@ h1:focus { outline: none; }
     .wal-tabela .wal-saude .mud-icon-root { font-size: 18px; }
     .wal-cotacao-data { margin-right: 4px; }
 }
+
+/* Grade dos gráficos de barras do MudChart: linhas pontilhadas visíveis (o padrão é 0,3 px, quase invisível) */
+.wal-card .mud-charts-gridlines-yaxis path {
+    stroke: #1f3a5f;
+    stroke-opacity: .75;
+    stroke-width: 1;
+    stroke-dasharray: 3 4;
+}
+
+[data-tema='dark'] .wal-card .mud-charts-gridlines-yaxis path {
+    stroke: var(--mud-palette-lines-default);
+    stroke-opacity: 1;
+}

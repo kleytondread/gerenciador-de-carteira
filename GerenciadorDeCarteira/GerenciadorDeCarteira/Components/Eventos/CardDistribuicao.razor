@@ -39,7 +39,7 @@
             </div>
             <div class="wal-distribuicao-grafico">
                 <MudChart T="double" ChartType="ChartType.StackedBar" ChartSeries="@dados.Series" ChartLabels="@dados.Rotulos"
-                          ChartOptions="@Opcoes()" Height="300px" Width="100%" />
+                          ChartOptions="@Opcoes(dados)" Height="300px" Width="100%" MatchBoundsToSize="true" />
             </div>
         </div>
     </ChildContent>
@@ -101,13 +101,14 @@
         ChartSeries<double> Serie(string nome, TipoProvento tipo) => new()
         {
             Name = nome,
-            Data = new ChartData<double>(grupos.Select(g => (double)porGrupo[g].Where(p => p.Tipo == tipo).Sum(p => p.Valor)).ToList())
+            // Em centavos: o tooltip mostra o número cru
+            Data = new ChartData<double>(grupos.Select(g => (double)Math.Round(porGrupo[g].Where(p => p.Tipo == tipo).Sum(p => p.Valor), 2)).ToList())
         };
 
-        // Com muitas barras mensais, um rótulo por ano (em janeiro) e no primeiro mês
+        // Com muitas barras mensais, um rótulo por ano (em janeiro) e no primeiro mês, se ele não ficar colado no janeiro seguinte
         var rotulos = grupos.Select((g, i) => agrupamento == "ano"
             ? g.Year.ToString()
-            : grupos.Count <= 13 || g.Month == 1 || i == 0 ? $"{NomesMes[g.Month - 1]}/{g.Year % 100:00}" : "").ToArray();
+            : grupos.Count <= 13 || g.Month == 1 || (i == 0 && g.Month <= 10) ? $"{NomesMes[g.Month - 1]}/{g.Year % 100:00}" : "").ToArray();
 
         decimal Soma(TipoProvento tipo) => noPeriodo.Where(p => p.Tipo == tipo).Sum(p => p.Valor);
         var total = noPeriodo.Sum(p => p.Valor);
@@ -130,12 +131,24 @@
 
     private static readonly string[] Cores = ["#2a78d6", "#eb6834", "#1baf7a"];
 
-    private StackedBarChartOptions Opcoes() => new()
+    private StackedBarChartOptions Opcoes(Distribuicao dados)
     {
-        ChartPalette = Cores,
-        // O resumo ao lado já faz a legenda; com valores ocultos, o eixo e o tooltip não mostram R$
-        ShowLegend = false,
-        ShowToolTips = !Mascarar,
-        YAxisToStringFunc = v => Mascarar ? "" : $"R$ {v.ToString("N0", Formatacao.PtBR)}"
-    };
+        // Linhas a cada R$ 500; nas barras anuais altas (mais de R$ 5.000) a cada R$ 1.000, para não amontoar o eixo
+        var maior = dados.Rotulos.Length == 0 ? 0
+            : Enumerable.Range(0, dados.Rotulos.Length).Max(i => dados.Series.Sum(s => s.Data.Values.ElementAt(i)));
+        return new()
+        {
+            ChartPalette = Cores,
+            // O resumo ao lado já faz a legenda; com valores ocultos, o eixo e o tooltip não mostram R$
+            ShowLegend = false,
+            ShowToolTips = !Mascarar,
+            // O MudChart não formata o número do tooltip; o valor já vem arredondado em centavos
+            TooltipTitleFormat = "R$ {{Y_VALUE}}",
+            TooltipSubtitleFormat = "{{SERIES_NAME}}",
+            YAxisTicks = maior > 5000 ? 1000 : 500,
+            // Sem limite baixo: o MudChart "afinaria" as linhas e mudaria o intervalo
+            MaxNumYAxisTicks = 40,
+            YAxisToStringFunc = v => Mascarar ? "" : $"R$ {v.ToString("N0", Formatacao.PtBR)}"
+        };
+    }
 }

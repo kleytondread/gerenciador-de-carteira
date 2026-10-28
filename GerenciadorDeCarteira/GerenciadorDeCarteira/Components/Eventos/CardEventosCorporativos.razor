@@ -1,0 +1,56 @@
+@* Desdobramentos, grupamentos e bonificações de todos os ativos rastreados *@
+
+<CardPainel Titulo="Eventos corporativos" Subtitulo="@Eventos.Count.ToString()" SemEspacamento="true" Class="@Class">
+    @if (Eventos.Count == 0)
+    {
+        <div class="wal-card-corpo wal-k">Nenhum evento corporativo registrado.</div>
+    }
+    else
+    {
+        <div class="wal-rolagem">
+            <MudSimpleTable Dense="true" Elevation="0" Class="wal-tabela">
+                <thead>
+                    <tr><th>Data ex</th><th>Ativo</th><th>Evento</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in todos ? Eventos : Eventos.Take(LinhasIniciais))
+                    {
+                        <tr>
+                            <td class="wal-k">@e.Data.ToString("dd/MM/yyyy")</td>
+                            <td><a href="@($"posicoes/{e.AtivoId}")" class="wal-forte">@e.Ticker</a></td>
+                            <td><span class="wal-simbolo" style="color:@Cor(e.Tipo)" aria-hidden="true">◆</span>@Descricao(e)</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </div>
+        @if (Eventos.Count > LinhasIniciais)
+        {
+            <div class="wal-card-rodape">
+                <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small" OnClick="() => todos = !todos">
+                    @(todos ? "Mostrar menos" : $"Ver todos ({Eventos.Count})")
+                </MudButton>
+            </div>
+        }
+    }
+</CardPainel>
+
+@code {
+    [Parameter, EditorRequired] public List<EventoCorporativoAtivoResponse> Eventos { get; set; } = [];
+
+    [Parameter] public string? Class { get; set; }
+
+    private const int LinhasIniciais = 10;
+    private bool todos;
+
+    // Cor por tipo, sempre junto do nome do evento
+    private static string Cor(TipoEventoCorporativo tipo) => tipo switch
+    {
+        TipoEventoCorporativo.Desdobramento => "#1baf7a",
+        TipoEventoCorporativo.Grupamento => "#eb6834",
+        _ => "#6250d6"
+    };
+
+    private static string Descricao(EventoCorporativoAtivoResponse e) =>
+        GraficoAtivo.DescricaoEvento(new EventoCorporativoResponse(e.Data, e.Tipo, e.Numerador, e.Denominador));
+}

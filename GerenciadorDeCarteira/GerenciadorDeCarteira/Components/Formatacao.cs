@@ -14,6 +14,9 @@ public static class Formatacao
 
     public static string Quantidade(decimal valor) => valor.ToString("N4", PtBR);
 
+    /// <summary>Quantidade sem zeros sobrando: 20 → "20", 9,39 → "9,39", 1760 → "1.760".</summary>
+    public static string QuantidadeCurta(decimal valor) => valor.ToString("#,##0.####", PtBR);
+
     public static string MoedaComSinal(decimal valor) =>
         (valor > 0 ? "+" : string.Empty) + valor.ToString("C2", PtBR);
 

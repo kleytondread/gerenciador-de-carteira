@@ -1,0 +1,141 @@
+@* Proventos recebidos por mês ou ano, empilhados por tipo (MudChart StackedBar), com totais do período *@
+
+<CardPainel Titulo="Distribuição de proventos" Class="@Class">
+    <Acoes>
+        <MudToggleGroup T="string" Value="@periodo" ValueChanged="TrocarPeriodo" Size="Size.Small" Outlined="true"
+                        Delimiters="true" Color="Color.Primary" aria-label="Período">
+            @foreach (var p in Periodos)
+            {
+                <MudToggleItem T="string" Value="@p" Text="@p" />
+            }
+        </MudToggleGroup>
+        <MudToggleGroup T="string" @bind-Value="agrupamento" Size="Size.Small" Outlined="true" Delimiters="true"
+                        Color="Color.Primary" aria-label="Agrupar por">
+            <MudToggleItem T="string" Value="@("mes")" Text="Mês" />
+            <MudToggleItem T="string" Value="@("ano")" Text="Ano" />
+        </MudToggleGroup>
+    </Acoes>
+    <ChildContent>
+        @{ var dados = Calcular(); }
+        <div class="wal-distribuicao">
+            <div class="wal-distribuicao-resumo">
+                @foreach (var (nome, cor, valor) in dados.PorTipo)
+                {
+                    <div class="wal-distribuicao-tipo" style="border-color:@cor">
+                        <span class="wal-k">@nome</span>
+                        <span class="wal-forte">@Formatacao.Moeda(valor, Mascarar)</span>
+                    </div>
+                }
+                <MudDivider />
+                <div class="wal-kv"><span class="wal-k">Média mensal</span><span class="wal-forte">@Formatacao.Moeda(dados.MediaMensal, Mascarar)</span></div>
+                <div class="wal-kv">
+                    <span class="wal-k">Total</span>
+                    <span class="wal-distribuicao-total">@Formatacao.Moeda(dados.Total, Mascarar)</span>
+                    @if (dados.VariacaoAnterior is decimal v)
+                    {
+                        <span class="wal-kpi-comp @Formatacao.CorGanhoPerda(v)">@Formatacao.Percentual(v) vs. @dados.Meses meses anteriores</span>
+                    }
+                </div>
+            </div>
+            <div class="wal-distribuicao-grafico">
+                <MudChart T="double" ChartType="ChartType.StackedBar" ChartSeries="@dados.Series" ChartLabels="@dados.Rotulos"
+                          ChartOptions="@Opcoes()" Height="300px" Width="100%" />
+            </div>
+        </div>
+    </ChildContent>
+</CardPainel>
+
+@code {
+    [Parameter, EditorRequired] public List<ProventoRecebidoResponse> Proventos { get; set; } = [];
+
+    /// <summary>Fim dos períodos: a última cotação da carteira.</summary>
+    [Parameter, EditorRequired] public DateOnly DataReferencia { get; set; }
+
+    [Parameter] public bool Mascarar { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private const string PeriodoInicio = "Início";
+    private static readonly string[] Periodos = ["12M", "24M", "60M", PeriodoInicio];
+    private static readonly string[] NomesMes = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+    private string periodo = "12M";
+    private string agrupamento = "mes";
+
+    private sealed record Distribuicao(
+        List<ChartSeries<double>> Series, string[] Rotulos, List<(string Nome, string Cor, decimal Valor)> PorTipo,
+        decimal Total, decimal MediaMensal, decimal? VariacaoAnterior, int Meses);
+
+    // Mais de dois anos em barras mensais ficam finas demais: troca para anual (dá para voltar)
+    private void TrocarPeriodo(string novo)
+    {
+        periodo = novo;
+        agrupamento = novo is "60M" or PeriodoInicio ? "ano" : "mes";
+    }
+
+    private Distribuicao Calcular()
+    {
+        var mesFinal = new DateOnly(DataReferencia.Year, DataReferencia.Month, 1);
+        var primeiro = Proventos.Count > 0 ? Proventos.Min(p => p.DataPagamento) : DataReferencia;
+        var meses = periodo switch
+        {
+            "12M" => 12,
+            "24M" => 24,
+            "60M" => 60,
+            _ => Math.Max((mesFinal.Year - primeiro.Year) * 12 + mesFinal.Month - primeiro.Month + 1, 1)
+        };
+        var inicio = mesFinal.AddMonths(-(meses - 1));
+
+        // Só o que já foi pago até a data de referência (proventos a receber ficam de fora)
+        var noPeriodo = Proventos.Where(p => p.DataPagamento >= inicio && p.DataPagamento <= DataReferencia).ToList();
+
+        var grupos = new List<DateOnly>();
+        if (agrupamento == "mes")
+            for (var m = inicio; m <= mesFinal; m = m.AddMonths(1)) grupos.Add(m);
+        else
+            for (var a = inicio.Year; a <= mesFinal.Year; a++) grupos.Add(new DateOnly(a, 1, 1));
+
+        DateOnly Grupo(DateOnly d) => agrupamento == "mes" ? new DateOnly(d.Year, d.Month, 1) : new DateOnly(d.Year, 1, 1);
+        var porGrupo = noPeriodo.ToLookup(p => Grupo(p.DataPagamento));
+
+        ChartSeries<double> Serie(string nome, TipoProvento tipo) => new()
+        {
+            Name = nome,
+            Data = new ChartData<double>(grupos.Select(g => (double)porGrupo[g].Where(p => p.Tipo == tipo).Sum(p => p.Valor)).ToList())
+        };
+
+        // Com muitas barras mensais, um rótulo por ano (em janeiro) e no primeiro mês
+        var rotulos = grupos.Select((g, i) => agrupamento == "ano"
+            ? g.Year.ToString()
+            : grupos.Count <= 13 || g.Month == 1 || i == 0 ? $"{NomesMes[g.Month - 1]}/{g.Year % 100:00}" : "").ToArray();
+
+        decimal Soma(TipoProvento tipo) => noPeriodo.Where(p => p.Tipo == tipo).Sum(p => p.Valor);
+        var total = noPeriodo.Sum(p => p.Valor);
+
+        decimal? variacao = null;
+        if (periodo != PeriodoInicio)
+        {
+            var anteriores = Proventos.Where(p => p.DataPagamento >= inicio.AddMonths(-meses) && p.DataPagamento < inicio).ToList();
+            var totalAnterior = anteriores.Sum(p => p.Valor);
+            // Sem histórico completo antes, a comparação enganaria
+            if (totalAnterior > 0 && primeiro <= inicio.AddMonths(-meses)) variacao = total / totalAnterior - 1;
+        }
+
+        return new Distribuicao(
+            [Serie("Dividendos", TipoProvento.Dividendo), Serie("JCP", TipoProvento.JCP), Serie("Rendimentos", TipoProvento.Rendimento)],
+            rotulos,
+            [("Dividendos", Cores[0], Soma(TipoProvento.Dividendo)), ("JCP", Cores[1], Soma(TipoProvento.JCP)), ("Rendimentos", Cores[2], Soma(TipoProvento.Rendimento))],
+            total, total / meses, variacao, meses);
+    }
+
+    private static readonly string[] Cores = ["#2a78d6", "#eb6834", "#1baf7a"];
+
+    private StackedBarChartOptions Opcoes() => new()
+    {
+        ChartPalette = Cores,
+        // O resumo ao lado já faz a legenda; com valores ocultos, o eixo e o tooltip não mostram R$
+        ShowLegend = false,
+        ShowToolTips = !Mascarar,
+        YAxisToStringFunc = v => Mascarar ? "" : $"R$ {v.ToString("N0", Formatacao.PtBR)}"
+    };
+}

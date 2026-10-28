@@ -206,7 +206,16 @@ namespace Wal.Data.Migrations
                     b.Property<DateOnly>("DataPagamento")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateOnly?>("DataPagamentoCorrigida")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Oculto")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Origem")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("TipoCorrigido")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("TipoProvento")

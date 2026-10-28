@@ -43,6 +43,62 @@ public record DashboardResponse(
     List<ProventosPeriodoResponse> Proventos12Meses,
     List<PosicaoDetalhadaResponse> Posicoes);
 
+/// <summary>Tela de Posições: abertas, encerradas e os fechamentos dos últimos 30 dias de cada aberta.</summary>
+public record PainelPosicoesResponse(
+    List<PosicaoDetalhadaResponse> Abertas,
+    List<PosicaoEncerradaResponse> Encerradas,
+    Dictionary<int, List<decimal>> Tendencia30Dias);
+
+/// <summary>Último pregão do ativo e a faixa de 52 semanas (mínima e máxima dos pregões).</summary>
+public record PregaoResponse(
+    DateOnly Data,
+    decimal Abertura,
+    decimal Maxima,
+    decimal Minima,
+    decimal Fechamento,
+    long Volume,
+    decimal? VariacaoReais,
+    decimal? VariacaoPercentual,
+    decimal? Minima52Semanas,
+    decimal? Maxima52Semanas);
+
+/// <summary>Um pregão do ativo; valor da posição e aplicado ficam nulos antes da primeira compra.</summary>
+public record PontoAtivoResponse(DateOnly Data, decimal Fechamento, decimal? ValorPosicao, decimal? ValorAplicado);
+
+public record EventoCorporativoResponse(DateOnly Data, TipoEventoCorporativo Tipo, decimal Numerador, decimal Denominador)
+{
+    /// <summary>Variação da quantidade: 0,1 = +10% (bonificação 11:10), −0,9 = grupamento 1:10.</summary>
+    public decimal Variacao => Numerador / Denominador - 1;
+}
+
+public record EventoCorporativoAtivoResponse(int AtivoId, string Ticker, DateOnly Data, TipoEventoCorporativo Tipo, decimal Numerador, decimal Denominador)
+{
+    public decimal Variacao => Numerador / Denominador - 1;
+}
+
+/// <summary>Tela de Eventos: todos os proventos recebidos, pagadores de 12 meses e eventos corporativos.</summary>
+/// <param name="DataReferencia">Última cotação da carteira: fim dos períodos (12 meses, 24 meses...).</param>
+public record PainelEventosResponse(
+    DateOnly DataReferencia,
+    List<ProventoRecebidoResponse> Proventos,
+    List<PagadorProventosResponse> Pagadores12Meses,
+    List<EventoCorporativoAtivoResponse> EventosCorporativos);
+
+/// <summary>Tudo o que a tela de detalhe de um ativo mostra.</summary>
+/// <param name="Posicao">Nula quando o ativo não está mais (ou nunca esteve) na carteira.</param>
+/// <param name="Encerrada">Resultado realizado, quando o ativo já foi vendido por inteiro.</param>
+/// <param name="ProventosPorAno">Pela data de pagamento, do primeiro ao último ano com provento.</param>
+public record DetalheAtivoResponse(
+    AtivoResponse Ativo,
+    PregaoResponse? Pregao,
+    PosicaoDetalhadaResponse? Posicao,
+    PosicaoEncerradaResponse? Encerrada,
+    List<PontoAtivoResponse> Serie,
+    List<ProventoRecebidoResponse> Proventos,
+    List<ProventosPeriodoResponse> ProventosPorAno,
+    List<MovimentacaoResponse> Movimentacoes,
+    List<EventoCorporativoResponse> EventosCorporativos);
+
 public record ResultadoMensalResponse(int Ano, int Mes, decimal Rentabilidade, decimal Resultado, decimal? Cdi);
 
 public record PontoDrawdownResponse(DateOnly Data, decimal Drawdown);
@@ -57,8 +113,8 @@ public record ContribuicaoAtivoResponse(int AtivoId, string Ticker, decimal Resu
 /// <param name="ProventosRecebidos">Proventos brutos desde a primeira compra.</param>
 /// <param name="ResultadoTotal">Valor atual + vendas + proventos − compras, desde a primeira compra.</param>
 /// <param name="ResultadoTotalPercentual">Resultado total ÷ total comprado.</param>
-/// <param name="DividendYield12Meses">Proventos dos últimos 12 meses ÷ valor atual.</param>
-/// <param name="YieldOnCost12Meses">Proventos dos últimos 12 meses ÷ custo.</param>
+/// <param name="DividendYield12Meses">Proventos por ação dos últimos 12 meses ÷ cotação atual.</param>
+/// <param name="YieldOnCost12Meses">Proventos por ação dos últimos 12 meses ÷ preço médio.</param>
 public record PosicaoDetalhadaResponse(
     int AtivoId,
     string Ticker,
@@ -94,9 +150,11 @@ public record PosicaoEncerradaResponse(
     decimal Resultado,
     decimal? ResultadoPercentual);
 
-/// <param name="DataPagamentoEstimada">O Yahoo só informa a data ex; a de pagamento é aproximada.</param>
+/// <param name="DataPagamentoEstimada">O Yahoo só informa a data ex; a de pagamento é aproximada até ser corrigida.</param>
 /// <param name="Quantidade">Quantidade com direito na data ex (na base de preço da fonte do provento).</param>
+/// <param name="Corrigido">Tipo ou data de pagamento foram corrigidos pelo usuário.</param>
 public record ProventoRecebidoResponse(
+    int ProventoId,
     int AtivoId,
     string Ticker,
     TipoProvento Tipo,
@@ -106,7 +164,8 @@ public record ProventoRecebidoResponse(
     bool DataPagamentoEstimada,
     decimal Quantidade,
     decimal ValorPorAcao,
-    decimal Valor);
+    decimal Valor,
+    bool Corrigido);
 
 /// <param name="Inicio">1º dia do mês ou do ano do grupo.</param>
 public record ProventosPeriodoResponse(DateOnly Inicio, decimal Dividendos, decimal Jcp, decimal Rendimentos)

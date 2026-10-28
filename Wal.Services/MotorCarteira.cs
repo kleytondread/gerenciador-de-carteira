@@ -16,10 +16,13 @@ internal sealed class MotorCarteira
     /// <summary>Um dia da carteira. Compras e vendas são o dinheiro que entrou e saiu; proventos, o que foi pago na data ex.</summary>
     public record Ponto(DateOnly Data, decimal Valor, decimal RentabilidadeAcumulada, decimal Compras, decimal Vendas, decimal Proventos);
 
-    /// <summary>Provento que a carteira recebeu: quantidade com direito na data ex × valor por ação.</summary>
+    /// <summary>
+    /// Provento que a carteira recebeu: quantidade com direito na data ex × valor por ação. Tipo e data de
+    /// pagamento já vêm com a correção do usuário, quando houver.
+    /// </summary>
     public record ProventoRecebido(
-        int AtivoId, TipoProvento Tipo, OrigemDado Origem, DateOnly? DataCom, DateOnly DataEx, DateOnly DataPagamento,
-        decimal Quantidade, decimal ValorPorAcao, decimal Valor);
+        int ProventoId, int AtivoId, TipoProvento Tipo, OrigemDado Origem, DateOnly? DataCom, DateOnly DataEx, DateOnly DataPagamento,
+        decimal Quantidade, decimal ValorPorAcao, decimal Valor, bool Corrigido, bool DataPagamentoEstimada);
 
     /// <summary>Totais de um ativo desde o início (compras sem as bonificações).</summary>
     public sealed class TotaisAtivo
@@ -52,7 +55,15 @@ internal sealed class MotorCarteira
 
     public decimal TotalProventos => ProventosRecebidos.Sum(p => p.Valor);
 
-    public static async Task<MotorCarteira> CalcularAsync(AppDbContext db, IReadOnlyCollection<DateOnly>? datasFoto = null)
+    /// <summary>Um dia de um ativo: valor da posição e quanto foi aplicado nele (compras − vendas, acumulado).</summary>
+    public record PontoAtivo(DateOnly Data, decimal Valor, decimal Aplicado);
+
+    /// <summary>Série diária do ativo pedido em <see cref="CalcularAsync"/>; vazia se nenhum foi pedido.</summary>
+    public List<PontoAtivo> SerieAtivo { get; } = [];
+
+    /// <param name="ativoSerie">Ativo cuja série diária (valor da posição × aplicado) também é guardada.</param>
+    public static async Task<MotorCarteira> CalcularAsync(
+        AppDbContext db, IReadOnlyCollection<DateOnly>? datasFoto = null, int? ativoSerie = null)
     {
         var motor = new MotorCarteira();
         var fotosPedidas = datasFoto is null ? [] : new HashSet<DateOnly>(datasFoto);
@@ -77,8 +88,9 @@ internal sealed class MotorCarteira
         // Das fontes automáticas, uma por ativo: Yahoo e Brapi gravam o mesmo evento com datas diferentes,
         // e somar as duas contaria o provento duas vezes. Os lançamentos manuais sempre entram — servem
         // justamente para o que as fontes automáticas não trazem.
+        // Ocultos foram descartados pelo usuário e não entram em nada
         var proventosPorDataEx = (await db.Proventos.AsNoTracking()
-                .Where(p => ativoIds.Contains(p.AtivoId))
+                .Where(p => ativoIds.Contains(p.AtivoId) && !p.Oculto)
                 .ToListAsync())
             .GroupBy(p => p.AtivoId)
             .SelectMany(g =>
@@ -146,9 +158,12 @@ internal sealed class MotorCarteira
                 var valor = quantidadeComDireito * provento.ValorPorAcao;
                 proventosDia += valor;
                 Totais(provento.AtivoId).Proventos += valor;
+                var corrigido = provento.TipoCorrigido.HasValue || provento.DataPagamentoCorrigida.HasValue;
                 motor.ProventosRecebidos.Add(new ProventoRecebido(
-                    provento.AtivoId, provento.TipoProvento, provento.Origem, provento.DataCom, data,
-                    provento.DataPagamento, quantidadeComDireito, provento.ValorPorAcao, valor));
+                    provento.Id, provento.AtivoId, provento.TipoEfetivo, provento.Origem, provento.DataCom, data,
+                    provento.DataPagamentoEfetiva, quantidadeComDireito, provento.ValorPorAcao, valor, corrigido,
+                    // O Yahoo só informa a data ex; a de pagamento é aproximada até o usuário corrigir
+                    provento.Origem == OrigemDado.YahooFinance && provento.DataPagamentoCorrigida is null));
             }
 
             while (indiceMovimentacao < movimentacoes.Count && movimentacoes[indiceMovimentacao].Data == data)
@@ -230,6 +245,12 @@ internal sealed class MotorCarteira
             valorAnterior = valorDia;
 
             motor.Pontos.Add(new Ponto(data, valorDia, indiceCota - 1, comprasDia, vendasDia, proventosDia));
+
+            if (ativoSerie is int idSerie && motor.PorAtivo.TryGetValue(idSerie, out var totaisSerie))
+                motor.SerieAtivo.Add(new PontoAtivo(
+                    data,
+                    quantidadePorAtivo.ContainsKey(idSerie) ? ValorAtivo(idSerie) : 0,
+                    totaisSerie.Compras - totaisSerie.Vendas));
 
             // O último dia sempre ganha foto: vale como "hoje" para intervalos que terminam depois da série
             if (fotosPedidas.Contains(data) || data == dataFim)

@@ -280,6 +280,100 @@ public class AnaliseCarteiraServiceTests : SqliteInMemoryTestBase
     }
 
     [Fact]
+    public async Task ObterPainelPosicoesAsync_AbertasEncerradasETendenciaDosUltimos30Dias()
+    {
+        var aberta = await AtivoAsync("ITSA4");
+        var vendida = await AtivoAsync("WEGE3");
+        await MovimentarAsync(aberta, TipoMovimentacao.Compra, D(1, 2), 10, 10);
+        await MovimentarAsync(vendida, TipoMovimentacao.Compra, D(1, 2), 10, 20);
+        await MovimentarAsync(vendida, TipoMovimentacao.Venda, D(2, 2), 10, 25);
+        await CotacoesAsync(aberta, (D(1, 2), 10), (D(2, 20), 11), (D(3, 2), 12));
+        await CotacoesAsync(vendida, (D(1, 2), 20), (D(2, 2), 25));
+
+        var painel = await sut.ObterPainelPosicoesAsync();
+
+        Assert.Equal("ITSA4", Assert.Single(painel.Abertas).Ticker);
+        Assert.Equal("WEGE3", Assert.Single(painel.Encerradas).Ticker);
+        // Fim da série em 02/03: entram os fechamentos depois de 31/01 (20/02 e 02/03)
+        Assert.Equal([11m, 12m], painel.Tendencia30Dias[aberta.Id]);
+    }
+
+    [Fact]
+    public async Task ObterDetalheAtivoAsync_PregaoSerieDaPosicaoEProventosPorAno()
+    {
+        var ativo = await AtivoAsync("ITSA4");
+        await MovimentarAsync(ativo, TipoMovimentacao.Compra, D(1, 5), 10, 10);
+        Db.CotacoesHistoricas.AddRange(
+            Fixtures.NovaCotacao(ativo.Id, D(1, 2), 9, minima: 8.5m, maxima: 9.5m),
+            Fixtures.NovaCotacao(ativo.Id, D(1, 5), 10, minima: 9.8m, maxima: 10.2m),
+            Fixtures.NovaCotacao(ativo.Id, D(1, 6), 12, abertura: 10.5m, minima: 10.4m, maxima: 12.5m, volume: 5000));
+        Db.Proventos.Add(Fixtures.NovoProvento(ativo.Id, D(1, 6), 0.3m, TipoProvento.JCP));
+        Db.EventosCorporativos.Add(Fixtures.NovoEvento(ativo.Id, new DateOnly(2025, 12, 19), 102, 100));
+        await Db.SaveChangesAsync();
+
+        var detalhe = await sut.ObterDetalheAtivoAsync(ativo.Id);
+
+        Assert.NotNull(detalhe);
+        var pregao = detalhe.Pregao!;
+        Assert.Equal(D(1, 6), pregao.Data);
+        Assert.Equal(2m, pregao.VariacaoReais);
+        Assert.Equal(0.2m, pregao.VariacaoPercentual);
+        Assert.Equal(8.5m, pregao.Minima52Semanas);
+        Assert.Equal(12.5m, pregao.Maxima52Semanas);
+
+        Assert.Equal(3, detalhe.Serie.Count);
+        Assert.Null(detalhe.Serie[0].ValorPosicao);          // antes da compra
+        Assert.Equal(120m, detalhe.Serie[2].ValorPosicao);
+        Assert.Equal(100m, detalhe.Serie[2].ValorAplicado);
+
+        Assert.NotNull(detalhe.Posicao);
+        Assert.Null(detalhe.Encerrada);
+        Assert.Equal(3m, Assert.Single(detalhe.Proventos).Valor);
+        Assert.Equal(3m, Assert.Single(detalhe.ProventosPorAno).Jcp);
+        Assert.Single(detalhe.Movimentacoes);
+        var evento = Assert.Single(detalhe.EventosCorporativos);
+        Assert.Equal(TipoEventoCorporativo.Bonificacao, evento.Tipo);
+        Assert.Equal(0.02m, evento.Variacao);
+    }
+
+    [Fact]
+    public async Task ObterDetalheAtivoAsync_AtivoVendido_TrazResultadoRealizado()
+    {
+        var ativo = await AtivoAsync("WEGE3");
+        await MovimentarAsync(ativo, TipoMovimentacao.Compra, D(1, 2), 10, 10);
+        await MovimentarAsync(ativo, TipoMovimentacao.Venda, D(1, 6), 10, 15);
+        await CotacoesAsync(ativo, (D(1, 2), 10), (D(1, 6), 15));
+
+        var detalhe = await sut.ObterDetalheAtivoAsync(ativo.Id);
+
+        Assert.Null(detalhe!.Posicao);
+        Assert.Equal(50m, detalhe.Encerrada!.Resultado);
+    }
+
+    [Fact]
+    public async Task ObterDetalheAtivoAsync_AtivoInexistente_RetornaNulo()
+    {
+        Assert.Null(await sut.ObterDetalheAtivoAsync(999));
+    }
+
+    [Fact]
+    public async Task DividendYield_PorAcao_NaoInflaQuandoParteDaPosicaoFoiVendida()
+    {
+        var ativo = await AtivoAsync("VALE3");
+        await MovimentarAsync(ativo, TipoMovimentacao.Compra, D(1, 2), 200, 50);
+        await MovimentarAsync(ativo, TipoMovimentacao.Venda, D(3, 2), 100, 50);
+        await CotacoesAsync(ativo, (D(1, 2), 50), (D(3, 2), 50), (D(6, 1), 50));
+        Db.Proventos.Add(Fixtures.NovoProvento(ativo.Id, D(2, 2), 2m)); // pago com 200 ações: R$ 400
+        await Db.SaveChangesAsync();
+
+        var posicao = Assert.Single(await sut.ObterPosicoesDetalhadasAsync());
+
+        Assert.Equal(400m, posicao.ProventosRecebidos);
+        Assert.Equal(2m / 50m, posicao.DividendYield12Meses);   // 4%, não 400 / 5.000 = 8%
+        Assert.Equal(2m / 50m, posicao.YieldOnCost12Meses);
+    }
+
+    [Fact]
     public async Task ObterDashboardAsync_SemMovimentacoes_RetornaNulo()
     {
         Assert.Null(await sut.ObterDashboardAsync());

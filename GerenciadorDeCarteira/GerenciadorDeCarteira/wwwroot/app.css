@@ -549,6 +549,285 @@ h1:focus {
     color: var(--mud-palette-text-secondary) !important;
 }
 
+/* ── Posições ───────────────────────────────────────────────────────────────── */
+
+.wal-busca { width: 200px; flex: 0 0 auto; }
+
+    .wal-busca .mud-input-control-input-container { margin: 0; }
+
+/* Cabeçalho ordenável: o botão ocupa a célula e mostra a seta só na coluna ativa (ou no hover) */
+.wal-ordenar {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+    .wal-ordenar .wal-ordenar-icone { font-size: 14px !important; opacity: 0; }
+    .wal-ordenar:hover .wal-ordenar-icone, .wal-ordenar:focus-visible .wal-ordenar-icone { opacity: .5; }
+
+.wal-ordenar-ativa { color: var(--mud-palette-text-primary); }
+
+    .wal-ordenar-ativa .wal-ordenar-icone { opacity: 1 !important; }
+
+.wal-peso {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    width: 100%;
+}
+
+    .wal-peso .wal-barra-trilho { flex: 1; max-width: 70px; height: 6px; }
+
+.wal-linha-grupo th, .wal-linha-grupo td {
+    background: var(--mud-palette-background-gray);
+    font-weight: 600;
+}
+
+.wal-linha-total th, .wal-linha-total td {
+    border-top: 2px solid var(--mud-palette-lines-default);
+    font-weight: 600;
+}
+
+.wal-tabela .wal-linha-grupo th, .wal-tabela .wal-linha-total th { font-size: 13px !important; }
+
+.wal-vazio {
+    padding: 24px !important;
+    text-align: center;
+    color: var(--mud-palette-text-secondary);
+}
+
+.wal-sparkline { color: var(--mud-palette-text-secondary); vertical-align: middle; }
+
+/* Celular: ficam Ativo, Valor e Resultado; o resto sai em vez de rolar para o lado */
+@media (max-width: 699.98px) {
+    /* !important: o MudSimpleTable define display nas células com seletor mais específico */
+    .wal-tabela .wal-sec, .wal-tabela .wal-chevron { display: none !important; }
+
+    .wal-tabela .wal-nome { max-width: 96px; }
+
+    /* Texto quebra linha em vez de empurrar a tabela para o lado; números continuam numa linha só */
+    .wal-tabela td:not(.wal-num) { white-space: normal !important; }
+
+    .wal-acoes-col { width: auto; }
+
+    .wal-tabela td, .wal-tabela th {
+        padding-left: 6px !important;
+        padding-right: 6px !important;
+        font-size: 13px !important;
+    }
+
+    /* Barra superior com uma linha a menos: a data das cotações só aparece em telas maiores */
+    .wal-sync { display: none; }
+}
+
+/* ── Detalhe do ativo ───────────────────────────────────────────────────────── */
+
+.wal-s6 { grid-column: span 6; }
+
+/* Coluna lateral com vários cards empilhados dentro de uma célula da grade */
+.wal-coluna {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+}
+
+.wal-ativo-cabecalho {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--mud-palette-lines-default);
+}
+
+.wal-ativo-id {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.wal-ativo-avatar {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    background: rgba(42, 120, 214, .14);
+    color: var(--mud-palette-primary);
+    font-weight: 700;
+}
+
+.wal-ativo-titulo, .wal-ativo-preco {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+}
+
+.wal-ativo-ticker { font-size: 22px; font-weight: 700; }
+
+.wal-ativo-nome { font-size: 14px; }
+
+.wal-ativo-cotacao { font-size: 20px; font-weight: 600; }
+
+.wal-ativo-acoes {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.wal-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.wal-kpi {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 14px 20px;
+    border-left: 1px solid var(--mud-palette-lines-default);
+}
+
+    .wal-kpi:first-child { border-left: 0; }
+
+.wal-kpi-valor { font-size: 18px; font-weight: 600; }
+
+.wal-kpi-comp { font-size: 12px; color: var(--mud-palette-text-secondary); }
+
+.wal-grade-kv {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 20px;
+    margin-bottom: 16px;
+}
+
+.wal-faixa { display: flex; flex-direction: column; gap: 6px; }
+
+.wal-faixa-trilho {
+    position: relative;
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--mud-palette-background-gray), rgba(42, 120, 214, .35));
+}
+
+.wal-faixa-marca {
+    position: absolute;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--mud-palette-primary);
+    border: 2px solid var(--mud-palette-surface);
+    transform: translate(-50%, -50%);
+}
+
+.wal-faixa-limites { display: flex; justify-content: space-between; }
+
+.wal-simbolo { margin-right: 6px; font-size: 11px; }
+
+.wal-estimada {
+    display: inline-grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    margin-right: 4px;
+    border-radius: 4px;
+    background: rgba(250, 178, 25, .2);
+    font-weight: 700;
+    cursor: help;
+}
+
+/* ── Eventos ────────────────────────────────────────────────────────────────── */
+
+.wal-distribuicao {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+}
+
+@media (max-width: 799.98px) {
+    .wal-distribuicao { grid-template-columns: 1fr; }
+}
+
+.wal-distribuicao-resumo {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px 18px;
+    border-radius: 10px;
+    background: var(--mud-palette-background-gray);
+}
+
+.wal-distribuicao-tipo {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-left: 10px;
+    border-left: 4px solid;
+}
+
+    .wal-distribuicao-tipo .wal-forte { font-size: 16px; }
+
+.wal-distribuicao-total { font-size: 20px; font-weight: 600; }
+
+.wal-distribuicao-grafico { min-width: 0; }
+
+.wal-ano { width: 150px; flex: 0 0 auto; }
+
+    .wal-ano .mud-input-control-input-container { margin: 0; }
+
+.wal-acoes-col { width: 84px; white-space: nowrap; }
+
+/* As ações da linha aparecem no hover ou no foco (no toque ficam sempre visíveis) */
+@media (hover: hover) {
+    .wal-tabela-acoes tbody tr .wal-acoes-col > * { opacity: 0; }
+    .wal-tabela-acoes tbody tr:hover .wal-acoes-col > *,
+    .wal-tabela-acoes tbody tr:focus-within .wal-acoes-col > * { opacity: 1; }
+}
+
+.wal-oculto-leitor {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+}
+
+.wal-paginacao {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 8px 16px;
+    border-top: 1px solid var(--mud-palette-lines-default);
+}
+
+.wal-formulario {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-top: 4px;
+}
+
+.wal-formulario-linha {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
 /* ── Overrides do modo escuro para cores fixas do template ──────────────────── */
 
 [data-bs-theme='dark'] a,

@@ -8,6 +8,15 @@ public interface IAnaliseCarteiraService
     /// <summary>Série, resumo, resultado mensal, drawdown, contribuição e proventos de 12 meses e posições — um cálculo só. Nulo sem movimentações.</summary>
     Task<DashboardResponse?> ObterDashboardAsync();
 
+    /// <summary>Posições abertas e encerradas e a tendência de 30 dias das abertas — um cálculo só.</summary>
+    Task<PainelPosicoesResponse> ObterPainelPosicoesAsync();
+
+    /// <summary>Pregão, posição (ou resultado realizado), série diária, proventos, transações e eventos de um ativo. Nulo se não existe.</summary>
+    Task<DetalheAtivoResponse?> ObterDetalheAtivoAsync(int ativoId);
+
+    /// <summary>Proventos recebidos, pagadores dos últimos 12 meses e eventos corporativos — um cálculo só. Nulo sem movimentações.</summary>
+    Task<PainelEventosResponse?> ObterPainelEventosAsync();
+
     /// <summary>Mês, ano, 12 meses, 24 meses e desde o início, terminando na cotação mais recente.</summary>
     Task<List<ResumoPeriodoResponse>> ObterResumoPeriodosAsync();
 

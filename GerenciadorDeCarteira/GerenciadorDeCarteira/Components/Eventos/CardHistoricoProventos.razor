@@ -1,0 +1,172 @@
+@* Histórico de proventos recebidos, com filtros, paginação e as ações de corrigir, excluir (ou ocultar) e restaurar *@
+
+<CardPainel Titulo="Histórico de proventos" Subtitulo="valores brutos" SemEspacamento="true" Class="@Class">
+    <Acoes>
+        <MudTextField T="string" @bind-Value="busca" @bind-Value:after="() => pagina = 1" Immediate="true" DebounceInterval="200"
+                      Placeholder="Buscar ativo" Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Outlined.Search" Clearable="true" Class="wal-busca" aria-label="Buscar ativo" />
+        <MudChipSet T="TipoProvento?" SelectionMode="SelectionMode.SingleSelection" SelectedValue="tipo"
+                    SelectedValueChanged="v => { tipo = v; pagina = 1; }" Size="Size.Small" Variant="Variant.Outlined"
+                    SelectedColor="Color.Primary" aria-label="Tipo">
+            <MudChip T="TipoProvento?" Value="@((TipoProvento?)null)" Default="true">Todos</MudChip>
+            @foreach (var (t, nome, cor) in Tipos)
+            {
+                <MudChip T="TipoProvento?" Value="@((TipoProvento?)t)"><span class="wal-quadrado" style="background:@cor"></span>@nome</MudChip>
+            }
+        </MudChipSet>
+        <MudSelect T="int?" @bind-Value="ano" @bind-Value:after="() => pagina = 1" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   Dense="true" Class="wal-ano" aria-label="Ano">
+            <MudSelectItem T="int?" Value="@((int?)null)">Todos os anos</MudSelectItem>
+            @foreach (var a in Anos)
+            {
+                <MudSelectItem T="int?" Value="@((int?)a)">@a</MudSelectItem>
+            }
+        </MudSelect>
+        @if (Ocultos.Count > 0)
+        {
+            <MudSwitch T="bool" @bind-Value="verOcultos" Color="Color.Primary" Size="Size.Small" Label="@($"Ocultos ({Ocultos.Count})")" />
+        }
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OnLancar">Lançar provento</MudButton>
+    </Acoes>
+    <ChildContent>
+        <div class="wal-rolagem">
+            @if (verOcultos)
+            {
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="wal-tabela">
+                    <thead>
+                        <tr><th>Pagamento</th><th>Tipo</th><th>Ativo</th><th class="wal-num">Por ação</th><th class="wal-num">Origem</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var o in Ocultos)
+                        {
+                            <tr>
+                                <td>@o.DataPagamento.ToString("dd/MM/yyyy")</td>
+                                <td>@GraficoAtivo.NomeProvento(o.Tipo)</td>
+                                <td class="wal-forte">@o.Ticker</td>
+                                <td class="wal-num">@o.ValorPorAcao.ToString("C4", Formatacao.PtBR)</td>
+                                <td class="wal-num wal-k">@o.Origem</td>
+                                <td class="wal-num">
+                                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Outlined.Restore" OnClick="() => OnRestaurar.InvokeAsync(o.Id)">Restaurar</MudButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="wal-tabela wal-tabela-acoes">
+                    <thead>
+                        <tr>
+                            <th class="wal-sec" title="Último dia com direito ao provento">Data com</th>
+                            <th>Pagamento</th>
+                            <th>Tipo</th>
+                            <th>Ativo</th>
+                            <th class="wal-num wal-sec">Qtd.</th>
+                            <th class="wal-num wal-sec">Por ação</th>
+                            <th class="wal-num" title="Valor bruto: JCP sem o desconto de 15% de IR">Valor</th>
+                            <th class="wal-acoes-col"><span class="wal-oculto-leitor">Ações</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in PaginaAtual)
+                        {
+                            <tr>
+                                <td class="wal-sec wal-k">@(p.DataCom?.ToString("dd/MM/yyyy") ?? "–")</td>
+                                <td>
+                                    @if (p.DataPagamentoEstimada)
+                                    {
+                                        <MudTooltip Text="Data estimada: o Yahoo informa só a data ex. Corrija pelo lápis."><span class="wal-estimada">≈</span></MudTooltip>
+                                    }
+                                    @p.DataPagamento.ToString("dd/MM/yyyy")
+                                </td>
+                                <td>
+                                    <span class="wal-quadrado" style="background:@CorTipo(p.Tipo)"></span>@GraficoAtivo.NomeProvento(p.Tipo)
+                                    @if (p.Corrigido)
+                                    {
+                                        <MudTooltip Text="Corrigido por você"><MudIcon Icon="@Icons.Material.Outlined.EditNote" Size="Size.Small" Class="wal-dica" /></MudTooltip>
+                                    }
+                                </td>
+                                <td><a href="@($"posicoes/{p.AtivoId}")" class="wal-forte">@p.Ticker</a></td>
+                                <td class="wal-num wal-sec">@(Mascarar ? "•••" : Formatacao.QuantidadeCurta(p.Quantidade))</td>
+                                <td class="wal-num wal-sec">@p.ValorPorAcao.ToString("C4", Formatacao.PtBR)</td>
+                                <td class="wal-num wal-forte">@Formatacao.Moeda(p.Valor, Mascarar)</td>
+                                <td class="wal-num wal-acoes-col">
+                                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="@($"Corrigir provento de {p.Ticker} pago em {p.DataPagamento:dd/MM/yyyy}")"
+                                                   OnClick="() => OnEditar.InvokeAsync(p.ProventoId)" />
+                                    <MudIconButton Icon="@(p.Origem == OrigemDado.Manual ? Icons.Material.Outlined.Delete : Icons.Material.Outlined.VisibilityOff)" Size="Size.Small"
+                                                   aria-label="@($"{(p.Origem == OrigemDado.Manual ? "Excluir" : "Ocultar")} provento de {p.Ticker} pago em {p.DataPagamento:dd/MM/yyyy}")"
+                                                   OnClick="() => OnExcluir.InvokeAsync(p)" />
+                                </td>
+                            </tr>
+                        }
+                        @if (Filtrados.Count == 0)
+                        {
+                            <tr><td colspan="8" class="wal-vazio">Nenhum provento encontrado.</td></tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </div>
+        @if (!verOcultos && Filtrados.Count > PorPagina)
+        {
+            <div class="wal-paginacao">
+                <span class="wal-k">@($"{(pagina - 1) * PorPagina + 1}–{Math.Min(pagina * PorPagina, Filtrados.Count)} de {Filtrados.Count}")</span>
+                <MudPagination Count="@((Filtrados.Count + PorPagina - 1) / PorPagina)" @bind-Selected="pagina" Size="Size.Small" Color="Color.Primary" />
+            </div>
+        }
+    </ChildContent>
+</CardPainel>
+
+@code {
+    [Parameter, EditorRequired] public List<ProventoRecebidoResponse> Proventos { get; set; } = [];
+
+    [Parameter] public List<ProventoResponse> Ocultos { get; set; } = [];
+
+    [Parameter] public bool Mascarar { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public EventCallback OnLancar { get; set; }
+
+    [Parameter] public EventCallback<int> OnEditar { get; set; }
+
+    [Parameter] public EventCallback<ProventoRecebidoResponse> OnExcluir { get; set; }
+
+    [Parameter] public EventCallback<int> OnRestaurar { get; set; }
+
+    private const int PorPagina = 20;
+    private static readonly (TipoProvento Tipo, string Nome, string Cor)[] Tipos =
+    [
+        (TipoProvento.Dividendo, "Dividendos", "#2a78d6"),
+        (TipoProvento.JCP, "JCP", "#eb6834"),
+        (TipoProvento.Rendimento, "Rendimentos", "#1baf7a")
+    ];
+
+    private string? busca;
+    private TipoProvento? tipo;
+    private int? ano;
+    private bool verOcultos;
+    private int pagina = 1;
+
+    private IEnumerable<int> Anos => Proventos.Select(p => p.DataPagamento.Year).Distinct().OrderDescending();
+
+    private List<ProventoRecebidoResponse> Filtrados => Proventos
+        .Where(p => tipo is null || p.Tipo == tipo)
+        .Where(p => ano is null || p.DataPagamento.Year == ano)
+        .Where(p => string.IsNullOrWhiteSpace(busca) || p.Ticker.Contains(busca.Trim(), StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    private IEnumerable<ProventoRecebidoResponse> PaginaAtual => Filtrados.Skip((pagina - 1) * PorPagina).Take(PorPagina);
+
+    protected override void OnParametersSet()
+    {
+        // Depois de restaurar o último oculto, a lista de ocultos some
+        if (Ocultos.Count == 0) verOcultos = false;
+        var paginas = Math.Max((Filtrados.Count + PorPagina - 1) / PorPagina, 1);
+        if (pagina > paginas) pagina = paginas;
+    }
+
+    private static string CorTipo(TipoProvento t) => Tipos.First(x => x.Tipo == t).Cor;
+}

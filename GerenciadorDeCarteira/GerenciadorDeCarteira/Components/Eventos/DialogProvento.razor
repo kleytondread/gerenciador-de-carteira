@@ -1,0 +1,90 @@
+@* Lançar um provento manual ou corrigir um existente. Num importado, só tipo e pagamento mudam. *@
+
+<MudDialog>
+    <TitleContent>@(Provento is null ? "Lançar provento" : $"Corrigir provento de {Provento.Ticker}")</TitleContent>
+    <DialogContent>
+        <div class="wal-formulario">
+            @if (Provento is null)
+            {
+                <MudSelect T="int?" @bind-Value="ativoId" Label="Ativo" Variant="Variant.Outlined" Required="true"
+                           RequiredError="Escolha o ativo" AnchorOrigin="Origin.BottomCenter">
+                    @foreach (var a in Ativos)
+                    {
+                        <MudSelectItem T="int?" Value="@((int?)a.Id)">@a.Ticker — @a.Nome</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+            <MudSelect T="TipoProvento" @bind-Value="tipo" Label="Tipo" Variant="Variant.Outlined">
+                <MudSelectItem T="TipoProvento" Value="TipoProvento.Dividendo">Dividendo</MudSelectItem>
+                <MudSelectItem T="TipoProvento" Value="TipoProvento.JCP">JCP</MudSelectItem>
+                <MudSelectItem T="TipoProvento" Value="TipoProvento.Rendimento">Rendimento</MudSelectItem>
+            </MudSelect>
+            <div class="wal-formulario-linha">
+                <MudDatePicker @bind-Date="dataCom" Label="@(Importado ? "Data ex" : "Data com")" Variant="Variant.Outlined"
+                               Disabled="Importado" DateFormat="dd/MM/yyyy" Culture="@Formatacao.PtBR"
+                               HelperText="@(Importado ? "Vem da fonte" : "Último dia com direito")" />
+                <MudDatePicker @bind-Date="dataPagamento" Label="Pagamento" Variant="Variant.Outlined" Required="true"
+                               DateFormat="dd/MM/yyyy" Culture="@Formatacao.PtBR" />
+            </div>
+            <MudNumericField T="decimal" @bind-Value="valorPorAcao" Label="Valor por ação (bruto)" Variant="Variant.Outlined"
+                             Disabled="Importado" Min="0" Format="N4" Culture="@Formatacao.PtBR" Adornment="Adornment.Start" AdornmentText="R$"
+                             HelperText="@(Importado ? "Vem da fonte" : "JCP antes dos 15% de IR")" />
+            @if (erro is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@erro</MudAlert>
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" DropShadow="false" Disabled="salvando" OnClick="SalvarAsync">Salvar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] public IMudDialogInstance MudDialog { get; set; } = default!;
+
+    /// <summary>Nulo para lançar um novo.</summary>
+    [Parameter] public ProventoResponse? Provento { get; set; }
+
+    [Parameter] public List<AtivoResponse> Ativos { get; set; } = [];
+
+    /// <summary>Grava e devolve a mensagem de erro, ou nulo se deu certo (o diálogo então fecha).</summary>
+    [Parameter, EditorRequired] public Func<DadosProvento, Task<string?>> Salvar { get; set; } = default!;
+
+    /// <summary>O que o formulário preencheu.</summary>
+    public sealed record DadosProvento(int AtivoId, TipoProvento Tipo, DateOnly? DataCom, DateOnly DataPagamento, decimal ValorPorAcao);
+
+    private int? ativoId;
+    private TipoProvento tipo = TipoProvento.Dividendo;
+    private DateTime? dataCom;
+    private DateTime? dataPagamento;
+    private decimal valorPorAcao;
+    private string? erro;
+    private bool salvando;
+
+    private bool Importado => Provento?.Importado == true;
+
+    protected override void OnInitialized()
+    {
+        if (Provento is null) return;
+        ativoId = Provento.AtivoId;
+        tipo = Provento.Tipo;
+        dataCom = Provento.DataCom?.ToDateTime(TimeOnly.MinValue);
+        dataPagamento = Provento.DataPagamento.ToDateTime(TimeOnly.MinValue);
+        valorPorAcao = Provento.ValorPorAcao;
+    }
+
+    private async Task SalvarAsync()
+    {
+        if (ativoId is not int id) { erro = "Escolha o ativo."; return; }
+        if (dataPagamento is not DateTime pagamento) { erro = "Informe a data de pagamento."; return; }
+        if (!Importado && dataCom is null) { erro = "Informe a data com."; return; }
+
+        salvando = true;
+        erro = await Salvar(new DadosProvento(
+            id, tipo, dataCom is DateTime c ? DateOnly.FromDateTime(c) : null, DateOnly.FromDateTime(pagamento), valorPorAcao));
+        salvando = false;
+        if (erro is null) MudDialog.Close(DialogResult.Ok(true));
+    }
+}

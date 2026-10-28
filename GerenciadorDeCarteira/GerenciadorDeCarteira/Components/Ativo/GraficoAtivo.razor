@@ -1,0 +1,215 @@
+@* Gráfico do detalhe do ativo (Chart.js): cotação com preço médio, ou valor da posição × aplicado, com marcadores *@
+@implements IAsyncDisposable
+@inject IJSRuntime Js
+
+<CardPainel Titulo="@(modo == ModoCotacao ? "Cotação" : "Minha posição")" Class="@Class">
+    <Acoes>
+        <MudToggleGroup T="string" Value="@periodo" ValueChanged="v => periodo = v" Size="Size.Small" Outlined="true"
+                        Delimiters="true" Color="Color.Primary" aria-label="Período">
+            @foreach (var p in Periodos)
+            {
+                <MudToggleItem T="string" Value="@p" Text="@p" />
+            }
+        </MudToggleGroup>
+    </Acoes>
+    <ChildContent>
+        <div class="wal-grafico-controles">
+            @if (TemPosicao)
+            {
+                <MudToggleGroup T="string" Value="@modo" ValueChanged="v => modo = v" Size="Size.Small" Outlined="true"
+                                Delimiters="true" Color="Color.Primary" aria-label="Métrica">
+                    <MudToggleItem T="string" Value="@ModoCotacao" Text="Cotação" />
+                    <MudToggleItem T="string" Value="@ModoPosicao" Text="Minha posição" />
+                </MudToggleGroup>
+            }
+            <MudTooltip Text="Clique e arraste no gráfico para medir um período">
+                <MudIcon Icon="@Icons.Material.Outlined.Straighten" Size="Size.Small" Class="wal-dica" aria-label="Clique e arraste no gráfico para medir um período" />
+            </MudTooltip>
+            @if (modo == ModoCotacao)
+            {
+                <span class="wal-legenda"><span class="wal-traco wal-traco-cheio" style="border-color:@CoresSeries.Carteira"></span>Cotação</span>
+                @if (Detalhe.Posicao is not null)
+                {
+                    <span class="wal-legenda"><span class="wal-traco" style="border-color:@CoresSeries.ValorAplicado"></span>Preço médio</span>
+                }
+            }
+            else
+            {
+                <span class="wal-legenda"><span class="wal-traco wal-traco-cheio" style="border-color:@CoresSeries.Carteira"></span>Valor da posição</span>
+                <span class="wal-legenda"><span class="wal-traco" style="border-color:@CoresSeries.ValorAplicado"></span>Valor aplicado</span>
+            }
+            <MudChipSet T="string" SelectionMode="SelectionMode.MultiSelection" SelectedValues="marcadores"
+                        SelectedValuesChanged="v => marcadores = v ?? []" Size="Size.Small" Variant="Variant.Outlined"
+                        SelectedColor="Color.Primary" CheckMark="true" aria-label="Marcadores">
+                @foreach (var (tipo, nome, simbolo, cor) in TiposMarcador)
+                {
+                    <MudChip T="string" Value="@tipo"><span class="wal-simbolo" style="color:@cor" aria-hidden="true">@simbolo</span>@nome</MudChip>
+                }
+            </MudChipSet>
+        </div>
+        <div class="wal-grafico" style="height:360px">
+            <canvas id="@IdCanvas" role="img" aria-label="@($"{(modo == ModoCotacao ? "Cotação" : "Valor da posição")} de {Detalhe.Ativo.Ticker} no período {periodo}")"></canvas>
+        </div>
+    </ChildContent>
+</CardPainel>
+
+@code {
+    [Parameter, EditorRequired] public DetalheAtivoResponse Detalhe { get; set; } = default!;
+
+    [Parameter] public bool Mascarar { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private const string IdCanvas = "grafico-ativo";
+    private const string ModoCotacao = "cotacao";
+    private const string ModoPosicao = "posicao";
+    private static readonly string[] Periodos = ["1M", "6M", "YTD", "1A", "5A", "Máx"];
+    private static readonly (string Tipo, string Nome, string Simbolo, string Cor)[] TiposMarcador =
+    [
+        ("compra", "Compras", "▲", "#0b7a34"),
+        ("venda", "Vendas", "▼", "#c5221f"),
+        ("provento", "Proventos", "●", "#2a78d6"),
+        ("evento", "Eventos", "◆", "#6250d6")
+    ];
+
+    private string periodo = "Máx";
+    private string modo = ModoCotacao;
+    private IReadOnlyCollection<string> marcadores = ["compra", "venda", "provento", "evento"];
+    private string? chaveDesenhada;
+    private bool graficoCriado;
+
+    private bool TemPosicao => Detalhe.Serie.Any(p => p.ValorPosicao is > 0);
+
+    private sealed record SerieGrafico(string Label, decimal?[] Data, string Cor, bool Tracejado, bool Preenchido);
+    private sealed record Marcador(int Indice, string Tipo, string Descricao);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var chave = $"{Detalhe.Ativo.Id}|{modo}|{periodo}|{string.Join(',', marcadores.Order())}|{Mascarar}|{Detalhe.Serie.Count}";
+        if (chave == chaveDesenhada) return;
+        chaveDesenhada = chave;
+        await DesenharAsync();
+    }
+
+    private async Task DesenharAsync()
+    {
+        var pontos = Detalhe.Serie;
+        // Minha posição começa na primeira compra
+        if (modo == ModoPosicao) pontos = pontos.SkipWhile(p => p.ValorPosicao is null).ToList();
+        if (pontos.Count == 0) return;
+
+        var fim = pontos[^1].Data;
+        // Mesma regra de data base do Dashboard: o período rende sobre o último pregão até ela
+        DateOnly? dataBase = periodo switch
+        {
+            "1M" => fim.AddMonths(-1),
+            "6M" => fim.AddMonths(-6),
+            "YTD" => new DateOnly(fim.Year - 1, 12, 31),
+            "1A" => fim.AddYears(-1),
+            "5A" => fim.AddYears(-5),
+            _ => null
+        };
+        var indiceBase = dataBase is DateOnly d ? Math.Max(pontos.FindLastIndex(p => p.Data <= d), 0) : 0;
+        var janela = pontos.Skip(indiceBase).ToList();
+
+        List<SerieGrafico> series;
+        if (modo == ModoCotacao)
+        {
+            series = [new("Cotação", janela.Select(p => (decimal?)p.Fechamento).ToArray(), CoresSeries.Carteira, false, true)];
+            // O Yahoo ajusta o histórico à base de ações atual, então o preço médio de hoje vale para todo o gráfico
+            if (Detalhe.Posicao is { } posicao)
+                series.Add(new("Preço médio", janela.Select(_ => (decimal?)posicao.PrecoMedio).ToArray(), CoresSeries.ValorAplicado, true, false));
+        }
+        else
+        {
+            series =
+            [
+                new("Valor da posição", janela.Select(p => p.ValorPosicao).ToArray(), CoresSeries.Carteira, false, true),
+                new("Valor aplicado", janela.Select(p => p.ValorAplicado).ToArray(), CoresSeries.ValorAplicado, true, false)
+            ];
+        }
+
+        var opcoes = new
+        {
+            medirVariacao = true,
+            ocultarValores = Mascarar && modo == ModoPosicao,
+            marcadores = Marcadores(janela)
+        };
+        await Js.InvokeVoidAsync("walCharts.renderSeries", IdCanvas,
+            janela.Select(p => p.Data.ToString("dd/MM/yy")).ToArray(), series, opcoes);
+        graficoCriado = true;
+    }
+
+    // Cada evento vai para o primeiro pregão na data ou depois dela (proventos e eventos podem cair fora de pregão)
+    private List<Marcador> Marcadores(List<PontoAtivoResponse> janela)
+    {
+        var datas = janela.Select(p => p.Data).ToList();
+        int Indice(DateOnly data)
+        {
+            if (data < datas[0] || data > datas[^1]) return -1;
+            var i = datas.BinarySearch(data);
+            return i >= 0 ? i : ~i;
+        }
+
+        var lista = new List<Marcador>();
+        if (marcadores.Contains("compra") || marcadores.Contains("venda"))
+        {
+            foreach (var m in Detalhe.Movimentacoes)
+            {
+                var compra = m.Tipo == TipoMovimentacao.Compra;
+                if (!marcadores.Contains(compra ? "compra" : "venda")) continue;
+                var texto = Mascarar
+                    ? $"{(compra ? "Compra" : "Venda")} em {m.Data:dd/MM/yyyy}"
+                    : $"{(compra ? "Compra" : "Venda")} de {Formatacao.QuantidadeCurta(m.Quantidade)} a {Formatacao.Moeda(m.PrecoUnitario)} em {m.Data:dd/MM/yyyy}";
+                lista.Add(new(Indice(m.Data), compra ? "compra" : "venda", texto));
+            }
+        }
+        if (marcadores.Contains("provento"))
+        {
+            foreach (var p in Detalhe.Proventos)
+            {
+                var data = p.DataCom ?? p.DataPagamento;
+                var texto = $"{NomeProvento(p.Tipo)} de {Formatacao.Moeda(p.ValorPorAcao)}/ação" +
+                            (Mascarar ? "" : $" ({Formatacao.Moeda(p.Valor)})") + $" — data com {data:dd/MM/yyyy}";
+                lista.Add(new(Indice(data), "provento", texto));
+            }
+        }
+        if (marcadores.Contains("evento"))
+        {
+            foreach (var e in Detalhe.EventosCorporativos)
+                lista.Add(new(Indice(e.Data), "evento", $"{DescricaoEvento(e)} em {e.Data:dd/MM/yyyy}"));
+        }
+        return lista.Where(m => m.Indice >= 0).ToList();
+    }
+
+    public static string NomeProvento(TipoProvento tipo) => tipo switch
+    {
+        TipoProvento.JCP => "JCP",
+        TipoProvento.Rendimento => "Rendimento",
+        _ => "Dividendo"
+    };
+
+    public static string DescricaoEvento(EventoCorporativoResponse e)
+    {
+        var proporcao = $"{e.Numerador.ToString("0.####", Formatacao.PtBR)}:{e.Denominador.ToString("0.####", Formatacao.PtBR)}";
+        return e.Tipo switch
+        {
+            TipoEventoCorporativo.Desdobramento => $"Desdobramento {proporcao}",
+            TipoEventoCorporativo.Grupamento => $"Grupamento {proporcao}",
+            _ => $"Bonificação de {Formatacao.PercentualSimples(e.Variacao)} ({proporcao})"
+        };
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!graficoCriado) return;
+        try
+        {
+            await Js.InvokeVoidAsync("walCharts.destroy", IdCanvas);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuito já encerrado — nada a limpar no navegador
+        }
+    }
+}

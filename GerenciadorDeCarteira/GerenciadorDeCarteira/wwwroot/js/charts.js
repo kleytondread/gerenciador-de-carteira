@@ -24,6 +24,16 @@ window.walCharts.renderLine = (canvasId, labels, data, label, opcoes) =>
 //   opcoes.formato: 'valor' (padrão) ou 'percentual' — série em % acumulado (12.5 = 12,5%); formata eixo e
 //     tooltip em % e faz a medição calcular a rentabilidade composta do período, de cada série.
 //   opcoes.ocultarValores: mantém o desenho, sem R$ no eixo, no tooltip nem na medição.
+//   opcoes.marcadores: [{ indice, tipo: 'compra'|'venda'|'provento'|'evento', descricao }] — pontos desenhados
+//     sobre a série principal, com a descrição no tooltip (ver _estilosMarcador).
+// Proventos menores: ativos que pagam todo mês encheriam a linha de pontos
+window.walCharts._estilosMarcador = {
+    compra: { rotulo: 'Compras', cor: '#0b7a34', estilo: 'triangle', rotacao: 0, raio: 6 },
+    venda: { rotulo: 'Vendas', cor: '#c5221f', estilo: 'triangle', rotacao: 180, raio: 6 },
+    provento: { rotulo: 'Proventos', cor: '#2a78d6', estilo: 'circle', rotacao: 0, raio: 3.5 },
+    evento: { rotulo: 'Eventos', cor: '#6250d6', estilo: 'rectRot', rotacao: 0, raio: 7 }
+};
+
 window.walCharts.renderSeries = (canvasId, labels, series, opcoes) => {
     // Destrói a instância anterior primeiro: se o canvas saiu da tela (período sem dados, troca de ativo),
     // o gráfico antigo não pode ficar preso a um elemento que não existe mais.
@@ -57,7 +67,40 @@ window.walCharts.renderSeries = (canvasId, labels, series, opcoes) => {
         };
     });
 
+    // Marcadores: um dataset por tipo, só com valor nos índices marcados (o resto é null e não aparece)
+    const marcadores = opcoes.marcadores || [];
+    for (const [tipo, e] of Object.entries(walCharts._estilosMarcador)) {
+        const doTipo = marcadores.filter(m => m.tipo === tipo && m.indice >= 0 && m.indice < labels.length);
+        if (doTipo.length === 0) continue;
+        const dados = new Array(labels.length).fill(null);
+        const descricoes = new Array(labels.length).fill(null);
+        for (const m of doTipo) {
+            dados[m.indice] = series[0].data[m.indice];
+            // Dois eventos no mesmo pregão viram uma linha só no tooltip
+            descricoes[m.indice] = descricoes[m.indice] ? `${descricoes[m.indice]} · ${m.descricao}` : m.descricao;
+        }
+        datasets.push({
+            label: e.rotulo,
+            data: dados,
+            showLine: false,
+            fill: false,
+            pointStyle: e.estilo,
+            rotation: e.rotacao,
+            pointRadius: e.raio,
+            pointHoverRadius: e.raio + 2,
+            pointBackgroundColor: e.cor,
+            pointBorderColor: '#ffffff',
+            pointBorderWidth: 1,
+            borderColor: e.cor,
+            backgroundColor: e.cor,
+            order: -1,
+            $walMarcador: true,
+            $walDescricoes: descricoes
+        });
+    }
+
     const rotulo = (ctx) => {
+        if (ctx.dataset.$walMarcador) return ctx.dataset.$walDescricoes[ctx.dataIndex];
         if (ctx.parsed.y === null || ctx.parsed.y === undefined) return `${ctx.dataset.label}: —`;
         if (percentual) return `${ctx.dataset.label}: ${formatarPct(ctx.parsed.y)}`;
         if (oculto) return `${ctx.dataset.label}: R$ •••••`;
@@ -182,7 +225,7 @@ window.walCharts._medicaoPlugin = {
         const { linha1, alta } = walCharts._resultadoMedicao(chart.$walFormato, v0, v1);
 
         // Rentabilidade: cada benchmark no mesmo período, para comparar com a carteira
-        const comparacoes = chart.$walFormato !== 'percentual' ? [] : datasets.slice(1)
+        const comparacoes = chart.$walFormato !== 'percentual' ? [] : datasets.slice(1).filter(d => !d.$walMarcador)
             .map(d => {
                 const a = d.data[i0], b = d.data[i1];
                 if (a === null || a === undefined || b === null || b === undefined) return null;

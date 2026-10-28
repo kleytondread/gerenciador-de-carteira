@@ -65,6 +65,7 @@ builder.Services.AddScoped<IAtivoService, AtivoService>();
 builder.Services.AddScoped<IMovimentacaoService, MovimentacaoService>();
 builder.Services.AddScoped<ICarteiraService, CarteiraService>();
 builder.Services.AddScoped<IAnaliseCarteiraService, AnaliseCarteiraService>();
+builder.Services.AddScoped<IProventoService, ProventoService>();
 
 // Hangfire.Storage.SQLite não tem storage oficial do Hangfire para SQLite;
 // usa o mesmo arquivo de banco da aplicação (storage roda em tabelas próprias, prefixo Hangfire).

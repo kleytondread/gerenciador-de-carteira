@@ -1,0 +1,63 @@
+@* Quem pagou proventos nos últimos 12 meses, com participação no total, DY e yield on cost *@
+
+<CardPainel Titulo="Pagadores" Subtitulo="12 meses" SemEspacamento="true" Class="@Class">
+    @if (Pagadores.Count == 0)
+    {
+        <div class="wal-card-corpo wal-k">Nenhum provento nos últimos 12 meses.</div>
+    }
+    else
+    {
+        var maior = Pagadores.Max(p => p.Recebido);
+        <div class="wal-rolagem">
+            <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="wal-tabela">
+                <thead>
+                    <tr>
+                        <th>Ativo</th>
+                        <th class="wal-num">Recebido</th>
+                        <th class="wal-num wal-sec">% do total</th>
+                        <th class="wal-num" title="Proventos por ação dos últimos 12 meses ÷ cotação atual">DY 12M</th>
+                        <th class="wal-num wal-sec" title="Proventos por ação dos últimos 12 meses ÷ preço médio">YoC 12M</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in Pagadores)
+                    {
+                        <tr>
+                            <td>
+                                <a href="@($"posicoes/{p.AtivoId}")" class="wal-forte">@p.Ticker</a>
+                                @if (p.Encerrada)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ml-2">encerrada</MudChip>
+                                }
+                                @if (!string.Equals(p.Nome, p.Ticker, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <span class="wal-k wal-nome">@p.Nome</span>
+                                }
+                            </td>
+                            <td class="wal-num wal-forte">@Formatacao.Moeda(p.Recebido, Mascarar)</td>
+                            <td class="wal-num wal-sec">
+                                <span class="wal-peso">
+                                    <span class="wal-barra-trilho"><span style="width:@Largura(p.Recebido, maior);background:#2a78d6"></span></span>
+                                    @Formatacao.PercentualSimples(p.Percentual)
+                                </span>
+                            </td>
+                            <td class="wal-num">@(p.DividendYield12Meses is decimal dy ? Formatacao.PercentualSimples(dy, 2) : "–")</td>
+                            <td class="wal-num wal-sec">@(p.YieldOnCost12Meses is decimal yoc ? Formatacao.PercentualSimples(yoc, 2) : "–")</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </div>
+    }
+</CardPainel>
+
+@code {
+    [Parameter, EditorRequired] public List<PagadorProventosResponse> Pagadores { get; set; } = [];
+
+    [Parameter] public bool Mascarar { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private static string Largura(decimal valor, decimal maior) =>
+        (maior > 0 ? valor / maior * 100 : 0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+}

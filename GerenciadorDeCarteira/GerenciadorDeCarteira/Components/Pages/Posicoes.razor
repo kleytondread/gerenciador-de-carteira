@@ -1,6 +1,4 @@
 @page "/posicoes"
-@* Versão provisória: a tabela que ficava no Dashboard, já com resultado total e proventos.
-   A tela completa (grupos por classe, encerradas, tendência de 30 dias) é a Fase 3. *@
 @inherits OwningComponentBase
 @inject PreferenciasExibicao Preferencias
 @inject NavigationManager Nav
@@ -12,77 +10,202 @@
 {
     <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Carregando posições" />
 }
-else if (posicoes.Count == 0)
+else if (painel is null || (painel.Abertas.Count == 0 && painel.Encerradas.Count == 0))
 {
-    <EmConstrucao Fase="3" Destino="transacoes" DestinoTexto="Lançar uma compra" />
+    <MudPaper Outlined="true" Class="pa-8 d-flex flex-column align-center gap-3">
+        <MudIcon Icon="@Icons.Material.Outlined.FormatListBulleted" Size="Size.Large" />
+        <MudText Typo="Typo.h6">Nenhuma posição ainda</MudText>
+        <MudButton Href="transacoes" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false">Lançar a primeira compra</MudButton>
+    </MudPaper>
 }
 else
 {
-    <CardPainel Titulo="Em carteira" Subtitulo="@($"{posicoes.Count} ativos")" SemEspacamento="true">
-        <div class="wal-rolagem">
-            <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="wal-tabela wal-tabela-clicavel">
-                <thead>
-                    <tr>
-                        <th>Ativo</th>
-                        <th class="wal-num">Qtd.</th>
-                        <th class="wal-num">Preço médio</th>
-                        <th class="wal-num">Cotação</th>
-                        <th class="wal-num" title="Variação da cotação no último pregão">Dia</th>
-                        <th class="wal-num">Valor</th>
-                        <th class="wal-num" title="Participação no patrimônio">Peso</th>
-                        <th class="wal-num" title="Cotação atual sobre o preço médio, sem proventos">Valorização</th>
-                        <th class="wal-num" title="Proventos brutos recebidos desde a primeira compra">Proventos</th>
-                        <th class="wal-num" title="Valor atual − compras + vendas + proventos">Resultado</th>
-                        <th aria-hidden="true"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var p in posicoes)
-                    {
-                        <tr @onclick="() => Nav.NavigateTo(Detalhe(p))">
-                            <td>
-                                <a href="@Detalhe(p)" class="wal-forte" @onclick:stopPropagation="true">@p.Ticker</a>
-                                @if (!string.Equals(p.Nome, p.Ticker, StringComparison.OrdinalIgnoreCase))
+    <CardPainel Titulo="@(EmCarteira ? "Em carteira" : "Encerradas")" SemEspacamento="true">
+        <Acoes>
+            <MudToggleGroup T="string" @bind-Value="aba" @bind-Value:after="AoTrocarAba" Size="Size.Small" Outlined="true" Delimiters="true"
+                            Color="Color.Primary" aria-label="Situação">
+                <MudToggleItem T="string" Value="@AbaAbertas" Text="@($"Em carteira ({painel.Abertas.Count})")" />
+                <MudToggleItem T="string" Value="@AbaEncerradas" Text="@($"Encerradas ({painel.Encerradas.Count})")" />
+            </MudToggleGroup>
+            <MudTextField T="string" @bind-Value="busca" Immediate="true" DebounceInterval="200" Placeholder="Buscar ativo"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Outlined.Search" Clearable="true" Class="wal-busca"
+                          aria-label="Buscar ativo por ticker ou nome" />
+            <MudChipSet T="TipoAtivo?" SelectionMode="SelectionMode.SingleSelection" @bind-SelectedValue="classe"
+                        Size="Size.Small" Variant="Variant.Outlined" SelectedColor="Color.Primary" aria-label="Classe">
+                <MudChip T="TipoAtivo?" Value="@((TipoAtivo?)null)" Default="true">Todas</MudChip>
+                @foreach (var tipo in ClassesPresentes)
+                {
+                    <MudChip T="TipoAtivo?" Value="@((TipoAtivo?)tipo)">@CoresSeries.NomeClasse(tipo) <span class="wal-k ml-1">@ContarClasse(tipo)</span></MudChip>
+                }
+            </MudChipSet>
+            @if (EmCarteira)
+            {
+                <MudSwitch T="bool" @bind-Value="agrupar" Color="Color.Primary" Size="Size.Small" Label="Agrupar por classe" />
+            }
+        </Acoes>
+        <ChildContent>
+            <div class="wal-rolagem">
+                @if (EmCarteira)
+                {
+                    <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="wal-tabela wal-tabela-clicavel wal-tabela-posicoes">
+                        <thead>
+                            <tr>
+                                @CabecalhoOrdenavel(Coluna.Ativo, "Ativo", "", false)
+                                <th class="wal-num wal-sec">Qtd.</th>
+                                <th class="wal-num wal-sec">Preço médio</th>
+                                <th class="wal-num wal-sec">Cotação</th>
+                                @CabecalhoOrdenavel(Coluna.Dia, "Dia", "Variação da cotação no último pregão", true, "wal-sec")
+                                @CabecalhoOrdenavel(Coluna.Valor, "Valor", "", true)
+                                <th class="wal-num wal-sec" title="Participação no patrimônio">Peso</th>
+                                @CabecalhoOrdenavel(Coluna.Valorizacao, "Valorização", "Cotação atual sobre o preço médio, sem proventos", true, "wal-sec")
+                                <th class="wal-num wal-sec" title="Proventos brutos recebidos desde a primeira compra">Proventos</th>
+                                @CabecalhoOrdenavel(Coluna.Resultado, "Resultado", "Valor atual − compras + vendas + proventos", true)
+                                <th class="wal-num wal-sec">30 dias</th>
+                                <th aria-hidden="true"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (agrupar)
+                            {
+                                @foreach (var grupo in AbertasFiltradas.GroupBy(p => p.Tipo).OrderBy(g => Array.IndexOf(CoresSeries.OrdemClasses, g.Key)))
                                 {
-                                    <span class="wal-k wal-nome">@p.Nome</span>
+                                    @LinhaResumo(CoresSeries.NomeClasse(grupo.Key), grupo.ToList(), "wal-linha-grupo")
+                                    @foreach (var p in Ordenar(grupo))
+                                    {
+                                        @LinhaPosicao(p)
+                                    }
                                 }
-                            </td>
-                            <td class="wal-num">@(Preferencias.Mascarar ? "•••" : Quantidade(p))</td>
-                            <td class="wal-num">@Formatacao.Moeda(p.PrecoMedio)</td>
-                            <td class="wal-num">@(p.Cotacao is decimal c ? Formatacao.Moeda(c) : "–")</td>
-                            <td class="wal-num @Formatacao.CorGanhoPerda(p.VariacaoDia)">@(p.VariacaoDia is decimal d ? Formatacao.Percentual(d) : "–")</td>
-                            <td class="wal-num wal-forte">@(p.Valor is decimal v ? Formatacao.Moeda(v, Preferencias.Mascarar) : "–")</td>
-                            <td class="wal-num">@(p.Peso is decimal w ? Formatacao.PercentualSimples(w) : "–")</td>
-                            <td class="wal-num @Formatacao.CorGanhoPerda(p.Valorizacao)">@(p.Valorizacao is decimal z ? Formatacao.Percentual(z) : "–")</td>
-                            <td class="wal-num">@(p.ProventosRecebidos > 0 ? Formatacao.Moeda(p.ProventosRecebidos, Preferencias.Mascarar) : "–")</td>
-                            <td class="wal-num @Formatacao.CorGanhoPerda(p.ResultadoTotal)">
-                                @(p.ResultadoTotal is decimal r ? Formatacao.MoedaComSinal(r, Preferencias.Mascarar) : "–")
-                                @if (p.ResultadoTotalPercentual is decimal rp)
+                            }
+                            else
+                            {
+                                @foreach (var p in Ordenar(AbertasFiltradas))
                                 {
-                                    <span class="wal-k wal-nome">@Formatacao.Percentual(rp)</span>
+                                    @LinhaPosicao(p)
                                 }
-                            </td>
-                            <td class="wal-chevron" aria-hidden="true"><MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" /></td>
-                        </tr>
-                    }
-                </tbody>
-            </MudSimpleTable>
-        </div>
+                            }
+                            @if (AbertasFiltradas.Count == 0)
+                            {
+                                <tr><td colspan="12" class="wal-vazio">Nenhum ativo encontrado.</td></tr>
+                            }
+                            else
+                            {
+                                @LinhaResumo("Total", AbertasFiltradas, "wal-linha-total")
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+                else
+                {
+                    <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="wal-tabela wal-tabela-clicavel">
+                        <thead>
+                            <tr>
+                                @CabecalhoOrdenavel(Coluna.Ativo, "Ativo", "", false)
+                                <th class="wal-sec">Primeira compra</th>
+                                @CabecalhoOrdenavel(Coluna.UltimaVenda, "Última venda", "", false, "wal-sec")
+                                <th class="wal-num wal-sec">Tempo</th>
+                                <th class="wal-num wal-sec" title="Soma das compras, com taxas">Investido</th>
+                                <th class="wal-num" title="Soma das vendas, sem taxas">Vendido</th>
+                                <th class="wal-num wal-sec">Proventos</th>
+                                @CabecalhoOrdenavel(Coluna.Resultado, "Resultado", "Vendido + proventos − investido", true)
+                                <th aria-hidden="true"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var e in OrdenarEncerradas(EncerradasFiltradas))
+                            {
+                                <tr @onclick="() => Abrir(e.AtivoId)">
+                                    <td>@CelulaAtivo(e.AtivoId, e.Ticker, e.Nome)</td>
+                                    <td class="wal-sec">@(e.PrimeiraCompra?.ToString("MM/yyyy") ?? "–")</td>
+                                    <td class="wal-sec">@(e.UltimaVenda?.ToString("MM/yyyy") ?? "–")</td>
+                                    <td class="wal-num wal-sec wal-k">@Tempo(e.PrimeiraCompra, e.UltimaVenda)</td>
+                                    <td class="wal-num wal-sec">@Formatacao.Moeda(e.Investido, Mascarar)</td>
+                                    <td class="wal-num">@Formatacao.Moeda(e.Vendido, Mascarar)</td>
+                                    <td class="wal-num wal-sec">@(e.Proventos > 0 ? Formatacao.Moeda(e.Proventos, Mascarar) : "–")</td>
+                                    <td class="wal-num @Formatacao.CorGanhoPerda(e.Resultado)">
+                                        <span class="wal-forte">@Formatacao.MoedaComSinal(e.Resultado, Mascarar)</span>
+                                        @if (e.ResultadoPercentual is decimal rp)
+                                        {
+                                            <span class="wal-k wal-nome">@Formatacao.Percentual(rp)</span>
+                                        }
+                                    </td>
+                                    <td class="wal-chevron" aria-hidden="true"><MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" /></td>
+                                </tr>
+                            }
+                            @if (EncerradasFiltradas.Count == 0)
+                            {
+                                <tr><td colspan="9" class="wal-vazio">Nenhum ativo encontrado.</td></tr>
+                            }
+                            else
+                            {
+                                var investido = EncerradasFiltradas.Sum(e => e.Investido);
+                                var resultado = EncerradasFiltradas.Sum(e => e.Resultado);
+                                <tr class="wal-linha-total">
+                                    <th scope="row">Total realizado</th>
+                                    <td class="wal-sec"></td><td class="wal-sec"></td><td class="wal-sec"></td>
+                                    <td class="wal-num wal-sec">@Formatacao.Moeda(investido, Mascarar)</td>
+                                    <td class="wal-num">@Formatacao.Moeda(EncerradasFiltradas.Sum(e => e.Vendido), Mascarar)</td>
+                                    <td class="wal-num wal-sec">@Formatacao.Moeda(EncerradasFiltradas.Sum(e => e.Proventos), Mascarar)</td>
+                                    <td class="wal-num @Formatacao.CorGanhoPerda(resultado)">
+                                        @Formatacao.MoedaComSinal(resultado, Mascarar)
+                                        @if (investido > 0)
+                                        {
+                                            <span class="wal-k wal-nome">@Formatacao.Percentual(resultado / investido)</span>
+                                        }
+                                    </td>
+                                    <td></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </div>
+        </ChildContent>
     </CardPainel>
 }
 
 @code {
+    private const string AbaAbertas = "abertas";
+    private const string AbaEncerradas = "encerradas";
+
+    private enum Coluna { Ativo, Dia, Valor, Valorizacao, Resultado, UltimaVenda }
+
     private bool carregando = true;
-    private List<PosicaoDetalhadaResponse> posicoes = [];
+    private PainelPosicoesResponse? painel;
+    private string aba = AbaAbertas;
+    private string? busca;
+    private TipoAtivo? classe;
+    private bool agrupar = true;
+    private Coluna ordem = Coluna.Valor;
+    private bool decrescente = true;
+
+    private bool EmCarteira => aba == AbaAbertas;
+    private bool Mascarar => Preferencias.Mascarar;
+
+    private IEnumerable<TipoAtivo> ClassesPresentes => CoresSeries.OrdemClasses.Where(t => ContarClasse(t) > 0);
+
+    private int ContarClasse(TipoAtivo tipo) => EmCarteira
+        ? painel!.Abertas.Count(p => p.Tipo == tipo)
+        : painel!.Encerradas.Count(e => e.Tipo == tipo);
+
+    private bool Passa(string ticker, string nome, TipoAtivo tipo) =>
+        (classe is null || tipo == classe) &&
+        (string.IsNullOrWhiteSpace(busca) ||
+         ticker.Contains(busca.Trim(), StringComparison.OrdinalIgnoreCase) ||
+         nome.Contains(busca.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private List<PosicaoDetalhadaResponse> AbertasFiltradas =>
+        painel!.Abertas.Where(p => Passa(p.Ticker, p.Nome, p.Tipo)).ToList();
+
+    private List<PosicaoEncerradaResponse> EncerradasFiltradas =>
+        painel!.Encerradas.Where(e => Passa(e.Ticker, e.Nome, e.Tipo)).ToList();
 
     protected override async Task OnInitializedAsync()
     {
         Preferencias.Mudou += AoMudarPreferencias;
         try
         {
-            posicoes = (await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterPosicoesDetalhadasAsync())
-                .OrderByDescending(p => p.Valor ?? 0)
-                .ToList();
+            painel = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterPainelPosicoesAsync();
         }
         finally
         {
@@ -95,12 +218,147 @@ else
         if (firstRender) await Preferencias.CarregarAsync();
     }
 
-    private static string Detalhe(PosicaoDetalhadaResponse p) => $"posicoes/{p.AtivoId}";
+    // ── Ordenação ────────────────────────────────────────────────────────
+
+    private void AoTrocarAba()
+    {
+        ordem = EmCarteira ? Coluna.Valor : Coluna.UltimaVenda;
+        decrescente = true;
+    }
+
+    private void TrocarOrdem(Coluna coluna)
+    {
+        if (ordem == coluna) decrescente = !decrescente;
+        else
+        {
+            ordem = coluna;
+            // Texto começa em A→Z; números e datas, do maior para o menor
+            decrescente = coluna != Coluna.Ativo;
+        }
+    }
+
+    private IEnumerable<PosicaoDetalhadaResponse> Ordenar(IEnumerable<PosicaoDetalhadaResponse> itens)
+    {
+        Func<PosicaoDetalhadaResponse, object?> chave = ordem switch
+        {
+            Coluna.Ativo => p => p.Ticker,
+            Coluna.Dia => p => p.VariacaoDia,
+            Coluna.Valorizacao => p => p.Valorizacao,
+            Coluna.Resultado => p => p.ResultadoTotal,
+            _ => p => p.Valor
+        };
+        return decrescente ? itens.OrderByDescending(chave) : itens.OrderBy(chave);
+    }
+
+    private IEnumerable<PosicaoEncerradaResponse> OrdenarEncerradas(IEnumerable<PosicaoEncerradaResponse> itens)
+    {
+        Func<PosicaoEncerradaResponse, object?> chave = ordem switch
+        {
+            Coluna.Ativo => e => e.Ticker,
+            Coluna.Resultado => e => e.Resultado,
+            _ => e => e.UltimaVenda
+        };
+        return decrescente ? itens.OrderByDescending(chave) : itens.OrderBy(chave);
+    }
+
+    private RenderFragment CabecalhoOrdenavel(Coluna coluna, string texto, string dica, bool numerica, string classeExtra = "") => __builder =>
+    {
+        var ativa = ordem == coluna;
+        <th class="@($"{(numerica ? "wal-num" : "")} {classeExtra}")" title="@dica"
+            aria-sort="@(ativa ? (decrescente ? "descending" : "ascending") : "none")">
+            <button type="button" class="@($"wal-ordenar {(ativa ? "wal-ordenar-ativa" : "")}")" @onclick="() => TrocarOrdem(coluna)">
+                @texto
+                <MudIcon Icon="@(ativa && !decrescente ? Icons.Material.Filled.ArrowUpward : Icons.Material.Filled.ArrowDownward)"
+                         Size="Size.Small" Class="wal-ordenar-icone" aria-hidden="true" />
+            </button>
+        </th>
+    };
+
+    // ── Linhas ───────────────────────────────────────────────────────────
+
+    private RenderFragment CelulaAtivo(int ativoId, string ticker, string nome) => __builder =>
+    {
+        <a href="@($"posicoes/{ativoId}")" class="wal-forte" @onclick:stopPropagation="true">@ticker</a>
+        @if (!string.Equals(nome, ticker, StringComparison.OrdinalIgnoreCase))
+        {
+            <span class="wal-k wal-nome">@nome</span>
+        }
+    };
+
+    private RenderFragment LinhaPosicao(PosicaoDetalhadaResponse p) => __builder =>
+    {
+        <tr @onclick="() => Abrir(p.AtivoId)">
+            <td>@CelulaAtivo(p.AtivoId, p.Ticker, p.Nome)</td>
+            <td class="wal-num wal-sec">@(Mascarar ? "•••" : Quantidade(p))</td>
+            <td class="wal-num wal-sec">@Formatacao.Moeda(p.PrecoMedio)</td>
+            <td class="wal-num wal-sec">@(p.Cotacao is decimal c ? Formatacao.Moeda(c) : "–")</td>
+            <td class="wal-num wal-sec @Formatacao.CorGanhoPerda(p.VariacaoDia)">@(p.VariacaoDia is decimal d ? Formatacao.Percentual(d) : "–")</td>
+            <td class="wal-num wal-forte">@(p.Valor is decimal v ? Formatacao.Moeda(v, Mascarar) : "–")</td>
+            <td class="wal-num wal-sec">
+                <span class="wal-peso">
+                    <span class="wal-barra-trilho"><span style="width:@LarguraPeso(p.Peso);background:@CoresSeries.Cor(p.Tipo)"></span></span>
+                    @(p.Peso is decimal w ? Formatacao.PercentualSimples(w) : "–")
+                </span>
+            </td>
+            <td class="wal-num wal-sec @Formatacao.CorGanhoPerda(p.Valorizacao)">@(p.Valorizacao is decimal z ? Formatacao.Percentual(z) : "–")</td>
+            <td class="wal-num wal-sec">@(p.ProventosRecebidos > 0 ? Formatacao.Moeda(p.ProventosRecebidos, Mascarar) : "–")</td>
+            <td class="wal-num @Formatacao.CorGanhoPerda(p.ResultadoTotal)">
+                <span class="wal-forte">@(p.ResultadoTotal is decimal r ? Formatacao.MoedaComSinal(r, Mascarar) : "–")</span>
+                @if (p.ResultadoTotalPercentual is decimal rp)
+                {
+                    <span class="wal-k wal-nome">@Formatacao.Percentual(rp)</span>
+                }
+            </td>
+            <td class="wal-num wal-sec">
+                <Sparkline Valores="@painel!.Tendencia30Dias.GetValueOrDefault(p.AtivoId)" Descricao="@($"Cotação de {p.Ticker} nos últimos 30 dias")" />
+            </td>
+            <td class="wal-chevron" aria-hidden="true"><MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" /></td>
+        </tr>
+    };
+
+    // Subtotal de uma classe ou total geral
+    private RenderFragment LinhaResumo(string titulo, List<PosicaoDetalhadaResponse> itens, string classeLinha) => __builder =>
+    {
+        var valor = itens.Sum(p => p.Valor ?? 0);
+        var custo = itens.Sum(p => p.Custo);
+        var ontem = itens.Where(p => p.Valor.HasValue && p.VariacaoDia.HasValue).Sum(p => p.Valor!.Value / (1 + p.VariacaoDia!.Value));
+        var hoje = itens.Where(p => p.Valor.HasValue && p.VariacaoDia.HasValue).Sum(p => p.Valor!.Value);
+        decimal? dia = ontem > 0 ? hoje / ontem - 1 : null;
+        var resultado = itens.Sum(p => p.ResultadoTotal ?? 0);
+        <tr class="@classeLinha">
+            <th scope="row">@titulo <span class="wal-k">@itens.Count @(itens.Count == 1 ? "ativo" : "ativos")</span></th>
+            <td class="wal-sec"></td><td class="wal-sec"></td><td class="wal-sec"></td>
+            <td class="wal-num wal-sec @Formatacao.CorGanhoPerda(dia)">@(dia is decimal d ? Formatacao.Percentual(d) : "")</td>
+            <td class="wal-num">@Formatacao.Moeda(valor, Mascarar)</td>
+            <td class="wal-num wal-sec">@Formatacao.PercentualSimples(itens.Sum(p => p.Peso ?? 0))</td>
+            <td class="wal-num wal-sec @Formatacao.CorGanhoPerda(valor - custo)">@(custo > 0 ? Formatacao.Percentual(valor / custo - 1) : "")</td>
+            <td class="wal-num wal-sec">@Formatacao.Moeda(itens.Sum(p => p.ProventosRecebidos), Mascarar)</td>
+            <td class="wal-num @Formatacao.CorGanhoPerda(resultado)">@Formatacao.MoedaComSinal(resultado, Mascarar)</td>
+            <td class="wal-sec"></td><td></td>
+        </tr>
+    };
+
+    private void Abrir(int ativoId) => Nav.NavigateTo($"posicoes/{ativoId}");
+
+    // Barra proporcional ao maior peso da carteira
+    private string LarguraPeso(decimal? peso)
+    {
+        var maior = painel!.Abertas.Max(p => p.Peso ?? 0);
+        var fracao = maior > 0 ? (peso ?? 0) / maior : 0;
+        return (fracao * 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    }
 
     // Quantidade truncada (sem arredondar): título do Tesouro com 2 casas, os demais inteiros
     private static string Quantidade(PosicaoDetalhadaResponse p) => p.Tipo == TipoAtivo.Tesouro
         ? (Math.Truncate(p.Quantidade * 100) / 100).ToString("N2", Formatacao.PtBR)
         : Math.Truncate(p.Quantidade).ToString("N0", Formatacao.PtBR);
+
+    private static string Tempo(DateOnly? inicio, DateOnly? fim)
+    {
+        if (inicio is not DateOnly a || fim is not DateOnly b) return "–";
+        var meses = (b.Year - a.Year) * 12 + b.Month - a.Month;
+        return meses >= 12 ? $"{meses / 12}a {meses % 12}m" : $"{Math.Max(meses, 0)}m";
+    }
 
     private void AoMudarPreferencias() => InvokeAsync(StateHasChanged);
 

@@ -1,479 +1,324 @@
 @page "/posicoes/{Id:int}"
 @page "/ativos/{Id:int}"
-@using System.ComponentModel.DataAnnotations
 @* DbContext próprio por página — ver comentário em Home.razor *@
 @inherits OwningComponentBase
-@inject IJSRuntime JsRuntime
-@inject NotificacoesCarteira Notificacoes
+@inject PreferenciasExibicao Preferencias
+@inject ISnackbar Snackbar
 
-<PageTitle>@(ativo?.Ticker ?? "Ativo") - Gestor de Carteira B3</PageTitle>
+<PageTitle>@(detalhe?.Ativo.Ticker ?? "Ativo") - Gestor de Carteira B3</PageTitle>
 <SectionContent SectionName="@TituloPagina.Secao">
-    <span class="wal-trilha"><a href="posicoes">Posições</a><span aria-hidden="true">›</span>@(ativo?.Ticker ?? "Ativo")</span>
+    <span class="wal-trilha"><a href="posicoes">Posições</a><span aria-hidden="true">›</span>@(detalhe?.Ativo.Ticker ?? "Ativo")</span>
 </SectionContent>
 
 @if (carregando)
 {
-    <p class="text-muted">Carregando...</p>
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Carregando o ativo" />
 }
-else if (ativo is null)
+else if (detalhe is null)
 {
-    <div class="alert alert-warning">Ativo não encontrado. <a href="/" class="alert-link">Voltar à carteira</a></div>
+    <MudAlert Severity="Severity.Warning">Ativo não encontrado. <MudLink Href="posicoes">Voltar às posições</MudLink></MudAlert>
 }
 else
 {
-    @* 9.1 — Cabeçalho *@
-    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-1">
-        <div>
-            <h3 class="mb-0">
-                @ativo.Ticker
-                <span class="badge bg-secondary fs-6 align-middle">@Formatacao.NomeTipo(ativo.Tipo)</span>
-                @if (!ativo.EstaAtivo)
-                {
-                    <span class="badge bg-warning text-dark fs-6 align-middle">Inativo</span>
-                }
-            </h3>
-            <div class="text-muted">@ativo.Nome</div>
-        </div>
-        <div class="text-end">
-            @if (ultimaCotacao is not null)
-            {
-                <div class="fs-3 fw-semibold">@ultimaCotacao.Fechamento.ToString("C2", PtBR)</div>
-                @if (variacaoDiaReais is decimal vr && variacaoDiaPercentual is decimal vp)
-                {
-                    <div class="@CorGanhoPerda(vr)">
-                        @FormatarComSinal(vr) (@FormatarPercentual(vp))
-                        <span class="text-muted">no dia</span>
+    var ativo = detalhe.Ativo;
+    var pregao = detalhe.Pregao;
+    <div class="wal-painel">
+        @* Cabeçalho do ativo + indicadores da posição *@
+        <MudPaper Outlined="true" Class="wal-card wal-s12">
+            <div class="wal-ativo-cabecalho">
+                <div class="wal-ativo-id">
+                    <span class="wal-ativo-avatar" aria-hidden="true">@ativo.Ticker[..Math.Min(2, ativo.Ticker.Length)]</span>
+                    <div>
+                        <div class="wal-ativo-titulo">
+                            <span class="wal-ativo-ticker">@ativo.Ticker</span>
+                            @if (!string.Equals(ativo.Nome, ativo.Ticker, StringComparison.OrdinalIgnoreCase))
+                            {
+                                <span class="wal-k wal-ativo-nome">@ativo.Nome</span>
+                            }
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@Formatacao.NomeTipo(ativo.Tipo)</MudChip>
+                            @if (!ativo.EstaAtivo)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">Rastreamento pausado</MudChip>
+                            }
+                        </div>
+                        @if (pregao is not null)
+                        {
+                            <div class="wal-ativo-preco">
+                                <span class="wal-ativo-cotacao">@Formatacao.Moeda(pregao.Fechamento)</span>
+                                @if (pregao.VariacaoReais is decimal vr && pregao.VariacaoPercentual is decimal vp)
+                                {
+                                    <span class="@Formatacao.CorGanhoPerda(vr) wal-forte">@Formatacao.MoedaComSinal(vr) (@Formatacao.Percentual(vp))</span>
+                                }
+                                <span class="wal-k">pregão de @pregao.Data.ToString("dd/MM/yyyy")</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <span class="wal-k">Sem cotações ainda — a carga histórica pode estar em andamento.</span>
+                        }
                     </div>
-                }
-                <small class="text-muted">Último pregão: @ultimaCotacao.Data.ToString("dd/MM/yyyy")</small>
-            }
-            else
-            {
-                <div class="text-muted">
-                    Sem cotações ainda — a carga histórica pode estar em andamento.
                 </div>
-            }
-        </div>
-    </div>
-
-    @* Título do Tesouro tem um preço por dia, sem máxima, mínima ou volume *@
-    @if (ultimaCotacao is not null && ativo.Tipo != TipoAtivo.Tesouro)
-    {
-        <div class="d-flex flex-wrap gap-4 text-muted small mb-4">
-            <span>Máxima do dia: <strong>@ultimaCotacao.Maxima.ToString("C2", PtBR)</strong></span>
-            <span>Mínima do dia: <strong>@ultimaCotacao.Minima.ToString("C2", PtBR)</strong></span>
-            <span>Volume: <strong>@ultimaCotacao.Volume.ToString("N0", PtBR)</strong></span>
-        </div>
-    }
-
-    @* 9.2 — Gráfico de cotação histórica com seletor de período *@
-    <div class="card mb-4">
-        <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <h6 class="card-title text-muted mb-0">Cotação histórica</h6>
-                <div class="btn-group btn-group-sm" role="group" aria-label="Período do gráfico">
-                    @foreach (var p in Periodos)
-                    {
-                        <button type="button"
-                                class="btn @(periodoSelecionado == p ? "btn-primary" : "btn-outline-primary")"
-                                disabled="@carregandoGrafico"
-                                @onclick="() => TrocarPeriodoAsync(p)">@p</button>
-                    }
+                <div class="wal-ativo-acoes">
+                    <MudButton Href="@($"transacoes?ativoId={ativo.Id}")" Variant="Variant.Filled" Color="Color.Primary"
+                               DropShadow="false" StartIcon="@Icons.Material.Filled.Add">Transação de @ativo.Ticker</MudButton>
+                    <MudMenu Icon="@Icons.Material.Filled.MoreVert" AriaLabel="Mais ações" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                        <MudMenuItem Href="ativos" Icon="@Icons.Material.Outlined.Edit">Editar ativo</MudMenuItem>
+                        <MudMenuItem OnClick="Sincronizar" Icon="@Icons.Material.Outlined.Sync" Disabled="sincronizando">Sincronizar cotações agora</MudMenuItem>
+                    </MudMenu>
                 </div>
             </div>
-            @if (cotacoesGrafico.Count == 0)
-            {
-                <p class="text-muted mb-0">Nenhuma cotação disponível para o período.</p>
-            }
-            else
-            {
-                <div style="height:320px">
-                    <canvas id="grafico-cotacao-ativo"></canvas>
-                </div>
-                <p class="text-muted small mb-0 mt-2">Clique e arraste no gráfico para ver a variação no período.</p>
-            }
-        </div>
-    </div>
-
-    @* 9.3 — Posição do usuário + histórico de movimentações *@
-    <div class="card mb-4">
-        <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <h6 class="card-title text-muted mb-0">Minha posição</h6>
-                @* 9.4 — Atalho para nova movimentação *@
-                @if (ativo.EstaAtivo)
+            <div class="wal-kpis">
+                @if (detalhe.Posicao is { } p)
                 {
-                    <button type="button" class="btn btn-sm btn-primary" @onclick="AlternarFormulario">
-                        @(exibirFormulario ? "Fechar" : "Nova movimentação")
-                    </button>
+                    @Kpi("Quantidade", Mascarar ? "•••" : Formatacao.QuantidadeCurta(p.Quantidade), ativo.Tipo == TipoAtivo.Tesouro ? "títulos" : "cotas")
+                    @Kpi("Preço médio", Formatacao.Moeda(p.PrecoMedio), "", dica: "Custo ÷ quantidade")
+                    @Kpi("Custo", Formatacao.Moeda(p.Custo, Mascarar), "")
+                    @Kpi("Valor atual", p.Valor is decimal v ? Formatacao.Moeda(v, Mascarar) : "–", p.Peso is decimal w ? $"{Formatacao.PercentualSimples(w)} da carteira" : "")
+                    @Kpi("Valorização", p.Valorizacao is decimal z ? Formatacao.Percentual(z) : "–",
+                         p.Valor is decimal v2 ? Formatacao.MoedaComSinal(v2 - p.Custo, Mascarar) : "",
+                         p.Valorizacao, "Cotação atual sobre o preço médio, sem proventos")
+                    @Kpi("Proventos recebidos", Formatacao.Moeda(p.ProventosRecebidos, Mascarar), "desde a 1ª compra")
+                    @Kpi("Resultado total", p.ResultadoTotal is decimal r ? Formatacao.MoedaComSinal(r, Mascarar) : "–",
+                         p.ResultadoTotalPercentual is decimal rp ? $"{Formatacao.Percentual(rp)} sobre o investido" : "",
+                         p.ResultadoTotal, "Valor atual − compras + vendas + proventos")
+                    @Kpi("Yield on cost 12M", p.YieldOnCost12Meses is decimal yoc ? Formatacao.PercentualSimples(yoc, 2) : "–",
+                         p.DividendYield12Meses is decimal dy ? $"DY 12M: {Formatacao.PercentualSimples(dy, 2)}" : "",
+                         dica: "Proventos por ação dos últimos 12 meses ÷ preço médio (YoC) e ÷ cotação atual (DY)")
+                }
+                else if (detalhe.Encerrada is { } e)
+                {
+                    @Kpi("Situação", "Encerrada", e.UltimaVenda is DateOnly uv ? $"vendida em {uv:MM/yyyy}" : "")
+                    @Kpi("Investido", Formatacao.Moeda(e.Investido, Mascarar), "")
+                    @Kpi("Vendido", Formatacao.Moeda(e.Vendido, Mascarar), "")
+                    @Kpi("Proventos recebidos", Formatacao.Moeda(e.Proventos, Mascarar), "")
+                    @Kpi("Resultado realizado", Formatacao.MoedaComSinal(e.Resultado, Mascarar),
+                         e.ResultadoPercentual is decimal erp ? $"{Formatacao.Percentual(erp)} sobre o investido" : "", e.Resultado)
                 }
                 else
                 {
-                    <small class="text-muted">Ativo inativo — reative-o na <a href="ativos">tela de ativos</a> para lançar movimentações.</small>
+                    @Kpi("Situação", "Sem posição", "nenhuma transação deste ativo")
                 }
             </div>
+        </MudPaper>
 
-            @if (exibirFormulario)
+        @if (detalhe.Serie.Count > 0)
+        {
+            <GraficoAtivo Detalhe="detalhe" Mascarar="Mascarar" Class="wal-s8 wal-xl9" />
+        }
+
+        <div class="wal-s4 wal-xl3 wal-coluna">
+            @if (pregao is not null)
             {
-                <div class="border rounded p-3 mb-3">
-                    <EditForm Model="movModel" OnValidSubmit="RegistrarMovimentacaoAsync">
-                        <DataAnnotationsValidator />
-                        <div class="row g-2 align-items-end">
-                            <div class="col-auto">
-                                <label class="form-label mb-0">Tipo</label>
-                                <InputSelect @bind-Value="movModel.Tipo" @bind-Value:after="AtualizarPosicaoNaDataAsync" class="form-select form-select-sm">
-                                    <option value="@TipoMovimentacao.Compra">Compra</option>
-                                    <option value="@TipoMovimentacao.Venda">Venda</option>
-                                </InputSelect>
-                            </div>
-                            <div class="col-auto">
-                                <label class="form-label mb-0">Data</label>
-                                <InputDate @bind-Value="movModel.Data" @bind-Value:after="AtualizarPosicaoNaDataAsync"
-                                           class="form-control form-control-sm" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
-                            </div>
-                            <div class="col-auto">
-                                <label class="form-label mb-0">Quantidade</label>
-                                <InputNumber @bind-Value="movModel.Quantidade" class="form-control form-control-sm" style="width:110px" />
-                            </div>
-                            <div class="col-auto">
-                                <label class="form-label mb-0">Preço unitário</label>
-                                <InputNumber @bind-Value="movModel.PrecoUnitario" class="form-control form-control-sm" style="width:110px" />
-                            </div>
-                            <div class="col-auto">
-                                <label class="form-label mb-0">Taxas</label>
-                                <InputNumber @bind-Value="movModel.Taxas" class="form-control form-control-sm" style="width:90px" />
-                            </div>
-                            <div class="col-auto">
-                                <button type="submit" class="btn btn-sm btn-success" disabled="@salvandoMovimentacao">
-                                    @if (salvandoMovimentacao)
-                                    {
-                                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                                    }
-                                    Registrar
-                                </button>
-                            </div>
-                        </div>
-                        @if (movModel.Tipo == TipoMovimentacao.Venda && posicaoNaData is not null)
-                        {
-                            <small class="text-muted d-block mt-2">
-                                Disponível para venda em @movModel.Data.ToString("dd/MM/yyyy"):
-                                <strong>@Formatacao.Quantidade(posicaoNaData.Quantidade)</strong>
-                            </small>
-                        }
-                        <ValidationSummary class="text-danger mt-2 mb-0" />
-                    </EditForm>
-                    @if (erroMovimentacao is not null)
+                <CardPainel Titulo="Pregão" Subtitulo="@pregao.Data.ToString("dd/MM/yyyy")">
+                    @if (ativo.Tipo != TipoAtivo.Tesouro)
                     {
-                        <div class="alert alert-danger mt-2 mb-0 py-2">@erroMovimentacao</div>
-                    }
-                    @if (mensagemMovimentacao is not null)
-                    {
-                        <div class="alert alert-success mt-2 mb-0 py-2">@mensagemMovimentacao</div>
-                    }
-                </div>
-            }
-
-            @if (posicao is null || posicao.Quantidade <= 0)
-            {
-                <p class="text-muted mb-0">
-                    Você não tem posição neste ativo — registre uma compra pelo botão acima para começar.
-                </p>
-            }
-            else
-            {
-                <div class="row g-3 mb-1">
-                    <div class="col-6 col-md-2">
-                        <div class="text-muted small">Quantidade</div>
-                        <div class="fw-semibold">@posicao.Quantidade.ToString("N4", PtBR)</div>
-                    </div>
-                    <div class="col-6 col-md-2">
-                        <div class="text-muted small">Preço médio</div>
-                        <div class="fw-semibold">@posicao.PrecoMedio.ToString("C2", PtBR)</div>
-                    </div>
-                    <div class="col-6 col-md-2">
-                        <div class="text-muted small">Valor investido</div>
-                        <div class="fw-semibold">@ValorInvestido.ToString("C2", PtBR)</div>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <div class="text-muted small">Valor atual</div>
-                        <div class="fw-semibold">@(ValorAtual?.ToString("C2", PtBR) ?? "—")</div>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <div class="text-muted small">Rentabilidade</div>
-                        <div class="fw-semibold @CorGanhoPerda(Rentabilidade)">
-                            @(Rentabilidade is decimal r ? FormatarPercentual(r) : "—")
+                        <div class="wal-grade-kv">
+                            <div class="wal-kv"><span class="wal-k">Abertura</span><span class="wal-forte">@Formatacao.Moeda(pregao.Abertura)</span></div>
+                            <div class="wal-kv"><span class="wal-k">Volume</span><span class="wal-forte">@VolumeCurto(pregao.Volume)</span></div>
+                            <div class="wal-kv"><span class="wal-k">Máxima</span><span class="wal-forte">@Formatacao.Moeda(pregao.Maxima)</span></div>
+                            <div class="wal-kv"><span class="wal-k">Mínima</span><span class="wal-forte">@Formatacao.Moeda(pregao.Minima)</span></div>
                         </div>
-                    </div>
-                </div>
+                    }
+                    @if (pregao.Minima52Semanas is decimal min && pregao.Maxima52Semanas is decimal max && max > min)
+                    {
+                        var posicao52 = Math.Clamp((pregao.Fechamento - min) / (max - min), 0, 1);
+                        <div class="wal-faixa" role="img" aria-label="@($"Cotação a {posicao52:P0} da faixa de 52 semanas")">
+                            <span class="wal-k">Faixa de 52 semanas</span>
+                            <div class="wal-faixa-trilho">
+                                <span class="wal-faixa-marca" style="left:@((posicao52 * 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></span>
+                            </div>
+                            <div class="wal-faixa-limites wal-k"><span>@Formatacao.Moeda(min)</span><span>@Formatacao.Moeda(max)</span></div>
+                        </div>
+                    }
+                </CardPainel>
             }
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-body">
-            <h6 class="card-title text-muted">Movimentações deste ativo</h6>
-            @if (movimentacoes.Count == 0)
+            @if (detalhe.EventosCorporativos.Count > 0)
             {
-                <p class="text-muted mb-0">Nenhuma movimentação registrada para este ativo.</p>
-            }
-            else
-            {
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover align-middle mb-0">
-                        <thead>
-                            <tr>
-                                <th>Tipo</th>
-                                <th>Data</th>
-                                <th class="text-end">Quantidade</th>
-                                <th class="text-end">Preço unitário</th>
-                                <th class="text-end">Taxas</th>
-                            </tr>
-                        </thead>
+                <CardPainel Titulo="Eventos corporativos" Subtitulo="@detalhe.EventosCorporativos.Count.ToString()" SemEspacamento="true">
+                    <MudSimpleTable Dense="true" Elevation="0" Class="wal-tabela">
                         <tbody>
-                            @foreach (var m in movimentacoes)
+                            @foreach (var e in detalhe.EventosCorporativos)
                             {
                                 <tr>
-                                    <td>
-                                        <span class="badge @(m.Tipo == TipoMovimentacao.Compra ? "bg-success" : "bg-danger")">@m.Tipo</span>
-                                    </td>
-                                    <td>@m.Data.ToString("dd/MM/yyyy")</td>
-                                    <td class="text-end">@m.Quantidade.ToString("N4", PtBR)</td>
-                                    <td class="text-end">@m.PrecoUnitario.ToString("C4", PtBR)</td>
-                                    <td class="text-end">@m.Taxas.ToString("C2", PtBR)</td>
+                                    <td class="wal-k">@e.Data.ToString("dd/MM/yyyy")</td>
+                                    <td><span class="wal-simbolo" style="color:#6250d6" aria-hidden="true">◆</span>@GraficoAtivo.DescricaoEvento(e)</td>
                                 </tr>
                             }
                         </tbody>
-                    </table>
-                </div>
-                <small class="text-muted">
-                    Para editar ou excluir, use a <a href="movimentacoes?ativoId=@ativo.Id">tela de movimentações</a>.
-                </small>
+                    </MudSimpleTable>
+                </CardPainel>
             }
         </div>
+
+        @if (detalhe.Proventos.Count > 0)
+        {
+            <CardPainel Titulo="Proventos" Subtitulo="valores brutos" Class="wal-s6" SemEspacamento="true">
+                <div class="wal-card-corpo">
+                    <MudChart T="double" ChartType="ChartType.StackedBar" ChartSeries="@seriesProventos" ChartLabels="@anosProventos"
+                              ChartOptions="@opcoesProventos" Height="200px" Width="100%" />
+                </div>
+                <div class="wal-rolagem">
+                    <MudSimpleTable Dense="true" Elevation="0" Class="wal-tabela">
+                        <thead>
+                            <tr>
+                                <th title="Quem tinha o ativo nesta data tem direito ao provento">Data com</th>
+                                <th>Pagamento</th>
+                                <th>Tipo</th>
+                                <th class="wal-num wal-sec">Qtd.</th>
+                                <th class="wal-num wal-sec">Por ação</th>
+                                <th class="wal-num" title="Valor bruto: JCP sem o desconto de 15% de IR">Valor</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var pr in detalhe.Proventos.Take(LinhasProventos))
+                            {
+                                <tr>
+                                    <td class="wal-k">@(pr.DataCom?.ToString("dd/MM/yyyy") ?? "–")</td>
+                                    <td>
+                                        @if (pr.DataPagamentoEstimada)
+                                        {
+                                            <MudTooltip Text="Data estimada: o Yahoo informa só a data ex"><span class="wal-estimada">≈</span></MudTooltip>
+                                        }
+                                        @pr.DataPagamento.ToString("dd/MM/yyyy")
+                                    </td>
+                                    <td>@GraficoAtivo.NomeProvento(pr.Tipo)</td>
+                                    <td class="wal-num wal-sec">@(Mascarar ? "•••" : Formatacao.QuantidadeCurta(pr.Quantidade))</td>
+                                    <td class="wal-num wal-sec">@pr.ValorPorAcao.ToString("C4", Formatacao.PtBR)</td>
+                                    <td class="wal-num wal-forte">@Formatacao.Moeda(pr.Valor, Mascarar)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </div>
+                @if (detalhe.Proventos.Count > LinhasProventos)
+                {
+                    <div class="wal-card-rodape wal-k">Mais @(detalhe.Proventos.Count - LinhasProventos) proventos — a lista completa entra na tela de Eventos.</div>
+                }
+            </CardPainel>
+        }
+
+        <CardPainel Titulo="Transações" Subtitulo="@detalhe.Movimentacoes.Count.ToString()" Class="wal-s6" SemEspacamento="true">
+            <Acoes>
+                <MudLink Href="@($"transacoes?ativoId={ativo.Id}")" Typo="Typo.body2">Ver e editar</MudLink>
+            </Acoes>
+            <ChildContent>
+                @if (detalhe.Movimentacoes.Count == 0)
+                {
+                    <div class="wal-card-corpo wal-k">Nenhuma transação deste ativo.</div>
+                }
+                else
+                {
+                    <div class="wal-rolagem">
+                        <MudSimpleTable Dense="true" Elevation="0" Class="wal-tabela">
+                            <thead>
+                                <tr><th>Data</th><th>Tipo</th><th class="wal-num">Qtd.</th><th class="wal-num wal-sec">Preço</th><th class="wal-num">Total</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var m in detalhe.Movimentacoes.Take(LinhasTransacoes))
+                                {
+                                    var compra = m.Tipo == TipoMovimentacao.Compra;
+                                    <tr>
+                                        <td>@m.Data.ToString("dd/MM/yyyy")</td>
+                                        <td><span class="wal-simbolo" style="color:@(compra ? "#0b7a34" : "#c5221f")" aria-hidden="true">@(compra ? "▲" : "▼")</span>@(compra ? "Compra" : "Venda")</td>
+                                        <td class="wal-num">@(Mascarar ? "•••" : Formatacao.QuantidadeCurta(m.Quantidade))</td>
+                                        <td class="wal-num wal-sec">@Formatacao.Moeda(m.PrecoUnitario)</td>
+                                        <td class="wal-num wal-forte">@Formatacao.Moeda(m.Quantidade * m.PrecoUnitario + (compra ? m.Taxas : -m.Taxas), Mascarar)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </div>
+                    @if (detalhe.Movimentacoes.Count > LinhasTransacoes)
+                    {
+                        <div class="wal-card-rodape">
+                            <MudButton Href="@($"transacoes?ativoId={ativo.Id}")" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">
+                                Ver todas (@detalhe.Movimentacoes.Count)
+                            </MudButton>
+                        </div>
+                    }
+                }
+            </ChildContent>
+        </CardPainel>
     </div>
 }
 
 @code {
-    [Parameter]
-    public int Id { get; set; }
+    [Parameter] public int Id { get; set; }
 
-    // Os mesmos da Home, sem o 5D: a cotação é diária, então 5 pontos dizem pouco
-    private static readonly string[] Periodos = ["1M", "6M", "1A", "YTD", "24M", "Início"];
-
-    private static readonly System.Globalization.CultureInfo PtBR = Formatacao.PtBR;
-
-    private IAtivoService AtivoService => ScopedServices.GetRequiredService<IAtivoService>();
-    private IMovimentacaoService MovimentacaoService => ScopedServices.GetRequiredService<IMovimentacaoService>();
-    private IPosicaoService PosicaoService => ScopedServices.GetRequiredService<IPosicaoService>();
+    private const int LinhasProventos = 8;
+    private const int LinhasTransacoes = 8;
 
     private bool carregando = true;
+    private bool sincronizando;
     private int? idCarregado;
-    private AtivoResponse? ativo;
+    private DetalheAtivoResponse? detalhe;
+    private List<ChartSeries<double>> seriesProventos = [];
+    private string[] anosProventos = [];
+    private readonly StackedBarChartOptions opcoesProventos = new()
+    {
+        ChartPalette = ["#2a78d6", "#eb6834", "#1baf7a"],
+        YAxisFormat = "N0"
+    };
 
-    // 9.1 — cabeçalho: dados do último pregão (últimos 2 fechamentos para variação do dia)
-    private CotacaoResponse? ultimaCotacao;
-    private decimal? variacaoDiaReais;
-    private decimal? variacaoDiaPercentual;
+    private bool Mascarar => Preferencias.Mascarar;
 
-    // 9.2 — gráfico
-    private string periodoSelecionado = "6M";
-    private List<CotacaoResponse> cotacoesGrafico = [];
-    private bool precisaRenderizarGrafico;
-    private bool graficoCriado;
-    private bool carregandoGrafico;
-
-    // 9.3 — posição + histórico
-    private PosicaoCalculada? posicao;
-    private PosicaoCalculada? posicaoNaData; // posição disponível na data escolhida no formulário de venda
-    private List<MovimentacaoResponse> movimentacoes = [];
-
-    // 9.4 — atalho de movimentação
-    private bool exibirFormulario;
-    private MovimentacaoModel movModel = new();
-    private bool salvandoMovimentacao;
-    private string? erroMovimentacao;
-    private string? mensagemMovimentacao;
-
-    private decimal ValorInvestido => posicao is null ? 0 : posicao.Quantidade * posicao.PrecoMedio;
-    private decimal? ValorAtual => posicao is not null && ultimaCotacao is not null
-        ? posicao.Quantidade * ultimaCotacao.Fechamento : null;
-    private decimal? Rentabilidade => posicao is { PrecoMedio: not 0 } && ultimaCotacao is not null
-        ? (ultimaCotacao.Fechamento - posicao.PrecoMedio) / posicao.PrecoMedio : null;
+    protected override void OnInitialized() => Preferencias.Mudou += AoMudarPreferencias;
 
     protected override async Task OnParametersSetAsync()
     {
-        // OnParametersSetAsync também roda em re-renders do pai sem troca de ativo — só recarrega se o Id mudou
+        // Também roda em re-renders do pai sem troca de ativo — só recarrega se o Id mudou
         if (idCarregado == Id) return;
         idCarregado = Id;
 
-        // Navegação de um ativo para outro reaproveita a mesma instância: zera o estado do formulário
-        exibirFormulario = false;
-        movModel = new MovimentacaoModel();
-        posicaoNaData = null;
-        erroMovimentacao = null;
-        mensagemMovimentacao = null;
-
         carregando = true;
-        ativo = (await AtivoService.ObterPorIdAsync(Id)).Valor;
-
-        if (ativo is not null)
+        detalhe = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterDetalheAtivoAsync(Id);
+        if (detalhe is not null)
         {
-            await CarregarCabecalhoAsync();
-            await CarregarGraficoAsync();
-            await CarregarPosicaoEMovimentacoesAsync();
+            anosProventos = detalhe.ProventosPorAno.Select(a => a.Inicio.Year.ToString()).ToArray();
+            ChartSeries<double> Serie(string nome, Func<ProventosPeriodoResponse, decimal> valor) =>
+                new() { Name = nome, Data = new ChartData<double>(detalhe.ProventosPorAno.Select(a => (double)valor(a)).ToList()) };
+            seriesProventos = [Serie("Dividendos", a => a.Dividendos), Serie("JCP", a => a.Jcp), Serie("Rendimentos", a => a.Rendimentos)];
         }
-
         carregando = false;
-    }
-
-    private async Task CarregarCabecalhoAsync()
-    {
-        // 1M é suficiente para obter os dois últimos pregões (variação do dia)
-        var resultado = await AtivoService.ObterCotacoesAsync(Id, "1M");
-        var serie = resultado.Valor ?? [];
-
-        ultimaCotacao = serie.Count > 0 ? serie[^1] : null;
-        if (serie.Count >= 2 && serie[^2].Fechamento != 0)
-        {
-            variacaoDiaReais = serie[^1].Fechamento - serie[^2].Fechamento;
-            variacaoDiaPercentual = variacaoDiaReais / serie[^2].Fechamento;
-        }
-        else
-        {
-            variacaoDiaReais = null;
-            variacaoDiaPercentual = null;
-        }
-    }
-
-    private async Task CarregarGraficoAsync()
-    {
-        carregandoGrafico = true;
-        try
-        {
-            var resultado = await AtivoService.ObterCotacoesAsync(Id, periodoSelecionado);
-            cotacoesGrafico = resultado.Valor ?? [];
-            // Sempre sincroniza com o JS: sem dados, o renderLine apenas destrói o gráfico anterior
-            precisaRenderizarGrafico = true;
-        }
-        finally
-        {
-            carregandoGrafico = false;
-        }
-    }
-
-    private async Task CarregarPosicaoEMovimentacoesAsync()
-    {
-        posicao = await PosicaoService.CalcularPosicaoAsync(Id);
-        movimentacoes = await MovimentacaoService.ListarAsync(Id);
-    }
-
-    private async Task AtualizarPosicaoNaDataAsync()
-    {
-        posicaoNaData = movModel.Tipo == TipoMovimentacao.Venda
-            ? await PosicaoService.CalcularPosicaoAsync(Id, movModel.Data)
-            : null;
-    }
-
-    private async Task TrocarPeriodoAsync(string periodo)
-    {
-        // Ignora cliques enquanto um período ainda carrega (evita duas consultas simultâneas no DbContext)
-        if (periodo == periodoSelecionado || carregandoGrafico) return;
-        periodoSelecionado = periodo;
-        await CarregarGraficoAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!precisaRenderizarGrafico) return;
-        precisaRenderizarGrafico = false;
-
-        var labels = cotacoesGrafico.Select(c => c.Data.ToString("dd/MM/yy")).ToArray();
-        var valores = cotacoesGrafico.Select(c => c.Fechamento).ToArray();
-
-        await JsRuntime.InvokeVoidAsync("walCharts.renderLine",
-            "grafico-cotacao-ativo", labels, valores, "Fechamento", new { medirVariacao = true });
-        graficoCriado = true;
+        if (firstRender) await Preferencias.CarregarAsync();
     }
 
-    private void AlternarFormulario()
+    // Recarrega cotações, proventos e eventos desde 2020 em segundo plano (mesmo job do cadastro)
+    private void Sincronizar()
     {
-        exibirFormulario = !exibirFormulario;
-        erroMovimentacao = null;
-        mensagemMovimentacao = null;
-        posicaoNaData = null;
-        movModel = new MovimentacaoModel();
+        sincronizando = true;
+        ScopedServices.GetRequiredService<IAtivoJobScheduler>().EnfileirarCargaHistoricaInicial(Id);
+        Snackbar.Add($"Sincronização de {detalhe?.Ativo.Ticker} enfileirada. Recarregue a página em alguns segundos.", Severity.Info);
     }
 
-    private async Task RegistrarMovimentacaoAsync()
+    private RenderFragment Kpi(string rotulo, string valor, string complemento, decimal? sinal = null, string? dica = null) => __builder =>
     {
-        salvandoMovimentacao = true;
-        erroMovimentacao = null;
-        mensagemMovimentacao = null;
-        try
-        {
-            var request = new CriarMovimentacaoRequest(
-                Id, movModel.Tipo, movModel.Data, movModel.Quantidade, movModel.PrecoUnitario, movModel.Taxas);
-            var resultado = await MovimentacaoService.CriarAsync(request);
-
-            if (resultado.Sucesso)
+        <div class="wal-kpi" title="@dica">
+            <span class="wal-k">@rotulo</span>
+            <span class="wal-kpi-valor @Formatacao.CorGanhoPerda(sinal)">@valor</span>
+            @if (!string.IsNullOrEmpty(complemento))
             {
-                mensagemMovimentacao = "Movimentação registrada.";
-                Notificacoes.NotificarAlteracao();
-                movModel = new MovimentacaoModel();
-                posicaoNaData = null;
-                // Atualiza posição e histórico na própria tela, sem reload (Tarefa 9.4)
-                await CarregarPosicaoEMovimentacoesAsync();
+                <span class="wal-kpi-comp @Formatacao.CorGanhoPerda(sinal)">@complemento</span>
             }
-            else
-            {
-                erroMovimentacao = resultado.Erro;
-            }
-        }
-        finally
-        {
-            salvandoMovimentacao = false;
-        }
-    }
+        </div>
+    };
 
-    private static string CorGanhoPerda(decimal? valor) => Formatacao.CorGanhoPerda(valor);
+    private static string VolumeCurto(long volume) => volume switch
+    {
+        >= 1_000_000 => $"{(volume / 1_000_000m).ToString("0.#", Formatacao.PtBR)} mi",
+        >= 1_000 => $"{(volume / 1_000m).ToString("0.#", Formatacao.PtBR)} mil",
+        _ => volume.ToString(Formatacao.PtBR)
+    };
 
-    private static string FormatarComSinal(decimal valor) => Formatacao.MoedaComSinal(valor);
-
-    private static string FormatarPercentual(decimal fracao) => Formatacao.Percentual(fracao);
+    private void AoMudarPreferencias() => InvokeAsync(StateHasChanged);
 
     protected override async ValueTask DisposeAsyncCore()
     {
-        // Só há o que destruir se o gráfico foi criado via interop (OnAfterRenderAsync interativo).
-        // A instância do prerender estático também é descartada, e nela interop nem é permitido
-        // (lançaria InvalidOperationException) — por isso o flag, e não um try/catch mais largo.
-        if (graficoCriado)
-        {
-            try
-            {
-                await JsRuntime.InvokeVoidAsync("walCharts.destroy", "grafico-cotacao-ativo");
-            }
-            catch (JSDisconnectedException)
-            {
-                // Circuito já encerrado — nada a limpar no browser.
-            }
-        }
-
+        Preferencias.Mudou -= AoMudarPreferencias;
         await base.DisposeAsyncCore();
-    }
-
-    private class MovimentacaoModel
-    {
-        public TipoMovimentacao Tipo { get; set; } = TipoMovimentacao.Compra;
-
-        public DateOnly Data { get; set; } = DateOnly.FromDateTime(DateTime.Today);
-
-        [Range(0.0001, double.MaxValue, ErrorMessage = "Quantidade deve ser maior que zero.")]
-        public decimal Quantidade { get; set; }
-
-        [Range(0.0001, double.MaxValue, ErrorMessage = "Preço unitário deve ser maior que zero.")]
-        public decimal PrecoUnitario { get; set; }
-
-        [Range(0, double.MaxValue, ErrorMessage = "Taxas não pode ser negativo.")]
-        public decimal Taxas { get; set; }
     }
 }

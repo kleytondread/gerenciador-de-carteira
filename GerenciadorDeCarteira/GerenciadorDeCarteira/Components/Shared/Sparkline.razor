@@ -1,0 +1,43 @@
+@* Minigráfico de linha, sem eixos: só a forma da tendência (SVG puro, não precisa de biblioteca) *@
+@if (caminho is not null)
+{
+    <svg viewBox="0 0 100 30" preserveAspectRatio="none" width="@Largura" height="@Altura" role="img" aria-label="@Descricao" class="wal-sparkline">
+        <path d="@caminho" fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round" />
+    </svg>
+}
+else
+{
+    <span class="wal-k">–</span>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<decimal>? Valores { get; set; }
+
+    [Parameter] public string Descricao { get; set; } = "Tendência";
+
+    [Parameter] public int Largura { get; set; } = 84;
+
+    [Parameter] public int Altura { get; set; } = 26;
+
+    private string? caminho;
+
+    protected override void OnParametersSet()
+    {
+        if (Valores is null || Valores.Count < 2)
+        {
+            caminho = null;
+            return;
+        }
+
+        var minimo = Valores.Min();
+        var amplitude = Valores.Max() - minimo;
+        var invariante = System.Globalization.CultureInfo.InvariantCulture;
+        caminho = string.Concat(Valores.Select((v, i) =>
+        {
+            var x = (decimal)i / (Valores.Count - 1) * 100;
+            // Margem de 2 em cima e embaixo para a linha não encostar na borda
+            var y = amplitude == 0 ? 15 : 28 - (v - minimo) / amplitude * 26;
+            return $"{(i == 0 ? "M" : "L")}{x.ToString("0.#", invariante)},{y.ToString("0.#", invariante)}";
+        }));
+    }
+}

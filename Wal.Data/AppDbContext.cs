@@ -40,6 +40,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // O tipo entra na chave: a empresa pode pagar dividendo e JCP no mesmo dia (ex.: CPLE6 em 28/06/2024)
             e.HasIndex(p => new { p.AtivoId, p.DataPagamento, p.TipoProvento, p.Origem }).IsUnique();
             e.Property(p => p.ValorPorAcao).HasPrecision(18, 4);
+            e.Ignore(p => p.TipoEfetivo);
+            e.Ignore(p => p.DataPagamentoEfetiva);
         });
 
         modelBuilder.Entity<EventoCorporativo>(e =>

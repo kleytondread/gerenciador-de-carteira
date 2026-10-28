@@ -1,0 +1,59 @@
+@* Queda da cota em relação ao maior valor anterior (Chart.js, mesma aparência do gráfico principal) *@
+@implements IAsyncDisposable
+@inject IJSRuntime Js
+
+<CardPainel Titulo="Drawdown" Subtitulo="queda desde o pico anterior" Class="@Class">
+    <Acoes>
+        @if (Drawdown.DataMaximo is DateOnly data)
+        {
+            <span class="wal-k">Máximo <span class="text-danger wal-forte">@Formatacao.Percentual(Drawdown.Maximo)</span> em @data.ToString("dd/MM/yyyy")</span>
+        }
+    </Acoes>
+    <ChildContent>
+        <div class="wal-grafico" style="height:220px">
+            <canvas id="@IdCanvas" role="img" aria-label="Drawdown da carteira desde o início"></canvas>
+        </div>
+    </ChildContent>
+</CardPainel>
+
+@code {
+    [Parameter, EditorRequired] public DrawdownResponse Drawdown { get; set; } = new([], 0, null);
+
+    [Parameter] public string? Class { get; set; }
+
+    private const string IdCanvas = "grafico-drawdown";
+    private DrawdownResponse? desenhado;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (ReferenceEquals(desenhado, Drawdown)) return;
+        desenhado = Drawdown;
+
+        var pontos = Drawdown.Pontos.Where(p => p.Data.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)).ToList();
+        if (pontos.Count == 0) return;
+
+        var serie = new
+        {
+            label = "Drawdown",
+            data = pontos.Select(p => Math.Round(p.Drawdown * 100, 4)).ToArray(),
+            cor = CoresSeries.Queda,
+            tracejado = false,
+            preenchido = true
+        };
+        await Js.InvokeVoidAsync("walCharts.renderSeries", IdCanvas,
+            pontos.Select(p => p.Data.ToString("dd/MM/yy")).ToArray(), new[] { serie }, new { formato = "percentual" });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (desenhado is null) return;
+        try
+        {
+            await Js.InvokeVoidAsync("walCharts.destroy", IdCanvas);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuito já encerrado — nada a limpar no navegador
+        }
+    }
+}

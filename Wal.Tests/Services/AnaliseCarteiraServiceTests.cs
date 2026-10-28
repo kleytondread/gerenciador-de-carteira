@@ -253,6 +253,39 @@ public class AnaliseCarteiraServiceTests : SqliteInMemoryTestBase
     }
 
     [Fact]
+    public async Task ObterDashboardAsync_ContribuicaoSomaOResultadoDe12MesesEValorAplicadoAcumulaFluxos()
+    {
+        var a = await AtivoAsync("ITSA4");
+        var b = await AtivoAsync("EGIE3");
+        // Carteira de mais de um ano: a contribuição de 12 meses parte de uma foto no meio da série
+        await MovimentarAsync(a, TipoMovimentacao.Compra, new DateOnly(2025, 1, 2), 10, 10);
+        await MovimentarAsync(b, TipoMovimentacao.Compra, new DateOnly(2025, 6, 2), 10, 20);
+        await MovimentarAsync(b, TipoMovimentacao.Venda, new DateOnly(2026, 3, 2), 5, 25);
+        await CotacoesAsync(a, (new DateOnly(2025, 1, 2), 10), (new DateOnly(2025, 12, 1), 13), (D(3, 2), 14));
+        await CotacoesAsync(b, (new DateOnly(2025, 6, 2), 20), (new DateOnly(2025, 12, 1), 22), (D(3, 2), 25));
+        Db.Proventos.Add(Fixtures.NovoProvento(a.Id, D(2, 2), 0.5m));
+        await Db.SaveChangesAsync();
+
+        var dashboard = await sut.ObterDashboardAsync();
+
+        Assert.NotNull(dashboard);
+        var resultado12Meses = dashboard.Resumo.Single(r => r.Periodo == PeriodoResumo.DozeMeses).Resultado;
+        Assert.Equal(resultado12Meses, dashboard.Contribuicao12Meses.Sum(c => c.Resultado));
+        Assert.Equal(D(3, 2), dashboard.Serie[^1].Data);
+        Assert.Equal(100m + 200m - 125m, dashboard.Serie[^1].ValorAplicado); // compras − vendas
+        Assert.Equal(12, dashboard.Proventos12Meses.Count);                  // abr/2025 a mar/2026
+        Assert.Equal(5m, dashboard.Proventos12Meses.Single(p => p.Inicio == D(2, 1)).Dividendos);
+        Assert.Equal(2, dashboard.Posicoes.Count);
+        Assert.Equal(dashboard.Serie.Count, dashboard.Drawdown.Pontos.Count);
+    }
+
+    [Fact]
+    public async Task ObterDashboardAsync_SemMovimentacoes_RetornaNulo()
+    {
+        Assert.Null(await sut.ObterDashboardAsync());
+    }
+
+    [Fact]
     public async Task CarteiraVazia_RetornaListasVazias()
     {
         Assert.Empty(await sut.ObterResumoPeriodosAsync());

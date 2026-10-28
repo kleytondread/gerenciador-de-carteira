@@ -1,7 +1,112 @@
 @page "/posicoes"
+@* Versão provisória: a tabela que ficava no Dashboard, já com resultado total e proventos.
+   A tela completa (grupos por classe, encerradas, tendência de 30 dias) é a Fase 3. *@
+@inherits OwningComponentBase
+@inject PreferenciasExibicao Preferencias
+@inject NavigationManager Nav
 
 <PageTitle>Posições - Gestor de Carteira B3</PageTitle>
 <SectionContent SectionName="@TituloPagina.Secao">Posições</SectionContent>
 
-@* Fase 3 do plano (Wal.Docs/plano-ui-mudblazor.md). Até lá a tabela de posições continua no Dashboard. *@
-<EmConstrucao Fase="3" Destino="" DestinoTexto="Ver posições no Dashboard" />
+@if (carregando)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Carregando posições" />
+}
+else if (posicoes.Count == 0)
+{
+    <EmConstrucao Fase="3" Destino="transacoes" DestinoTexto="Lançar uma compra" />
+}
+else
+{
+    <CardPainel Titulo="Em carteira" Subtitulo="@($"{posicoes.Count} ativos")" SemEspacamento="true">
+        <div class="wal-rolagem">
+            <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="wal-tabela wal-tabela-clicavel">
+                <thead>
+                    <tr>
+                        <th>Ativo</th>
+                        <th class="wal-num">Qtd.</th>
+                        <th class="wal-num">Preço médio</th>
+                        <th class="wal-num">Cotação</th>
+                        <th class="wal-num" title="Variação da cotação no último pregão">Dia</th>
+                        <th class="wal-num">Valor</th>
+                        <th class="wal-num" title="Participação no patrimônio">Peso</th>
+                        <th class="wal-num" title="Cotação atual sobre o preço médio, sem proventos">Valorização</th>
+                        <th class="wal-num" title="Proventos brutos recebidos desde a primeira compra">Proventos</th>
+                        <th class="wal-num" title="Valor atual − compras + vendas + proventos">Resultado</th>
+                        <th aria-hidden="true"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in posicoes)
+                    {
+                        <tr @onclick="() => Nav.NavigateTo(Detalhe(p))">
+                            <td>
+                                <a href="@Detalhe(p)" class="wal-forte" @onclick:stopPropagation="true">@p.Ticker</a>
+                                @if (!string.Equals(p.Nome, p.Ticker, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <span class="wal-k wal-nome">@p.Nome</span>
+                                }
+                            </td>
+                            <td class="wal-num">@(Preferencias.Mascarar ? "•••" : Quantidade(p))</td>
+                            <td class="wal-num">@Formatacao.Moeda(p.PrecoMedio)</td>
+                            <td class="wal-num">@(p.Cotacao is decimal c ? Formatacao.Moeda(c) : "–")</td>
+                            <td class="wal-num @Formatacao.CorGanhoPerda(p.VariacaoDia)">@(p.VariacaoDia is decimal d ? Formatacao.Percentual(d) : "–")</td>
+                            <td class="wal-num wal-forte">@(p.Valor is decimal v ? Formatacao.Moeda(v, Preferencias.Mascarar) : "–")</td>
+                            <td class="wal-num">@(p.Peso is decimal w ? Formatacao.PercentualSimples(w) : "–")</td>
+                            <td class="wal-num @Formatacao.CorGanhoPerda(p.Valorizacao)">@(p.Valorizacao is decimal z ? Formatacao.Percentual(z) : "–")</td>
+                            <td class="wal-num">@(p.ProventosRecebidos > 0 ? Formatacao.Moeda(p.ProventosRecebidos, Preferencias.Mascarar) : "–")</td>
+                            <td class="wal-num @Formatacao.CorGanhoPerda(p.ResultadoTotal)">
+                                @(p.ResultadoTotal is decimal r ? Formatacao.MoedaComSinal(r, Preferencias.Mascarar) : "–")
+                                @if (p.ResultadoTotalPercentual is decimal rp)
+                                {
+                                    <span class="wal-k wal-nome">@Formatacao.Percentual(rp)</span>
+                                }
+                            </td>
+                            <td class="wal-chevron" aria-hidden="true"><MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </div>
+    </CardPainel>
+}
+
+@code {
+    private bool carregando = true;
+    private List<PosicaoDetalhadaResponse> posicoes = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Preferencias.Mudou += AoMudarPreferencias;
+        try
+        {
+            posicoes = (await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterPosicoesDetalhadasAsync())
+                .OrderByDescending(p => p.Valor ?? 0)
+                .ToList();
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Preferencias.CarregarAsync();
+    }
+
+    private static string Detalhe(PosicaoDetalhadaResponse p) => $"posicoes/{p.AtivoId}";
+
+    // Quantidade truncada (sem arredondar): título do Tesouro com 2 casas, os demais inteiros
+    private static string Quantidade(PosicaoDetalhadaResponse p) => p.Tipo == TipoAtivo.Tesouro
+        ? (Math.Truncate(p.Quantidade * 100) / 100).ToString("N2", Formatacao.PtBR)
+        : Math.Truncate(p.Quantidade).ToString("N0", Formatacao.PtBR);
+
+    private void AoMudarPreferencias() => InvokeAsync(StateHasChanged);
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        Preferencias.Mudou -= AoMudarPreferencias;
+        await base.DisposeAsyncCore();
+    }
+}

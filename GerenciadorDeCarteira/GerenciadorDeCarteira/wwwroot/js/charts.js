@@ -1,7 +1,7 @@
 window.walCharts = window.walCharts || {};
 window.walCharts._instances = window.walCharts._instances || {};
 
-// Cores de eixos/grade por tema — a cor da série (azul primário) funciona bem nos dois temas.
+// Cores de eixos/grade por tema — as cores das séries funcionam nos dois temas.
 window.walCharts._themeColors = (isDark) => isDark
     ? { text: '#adb5bd', grid: 'rgba(255, 255, 255, 0.08)' }
     : { text: '#666666', grid: 'rgba(0, 0, 0, 0.08)' };
@@ -9,69 +9,87 @@ window.walCharts._themeColors = (isDark) => isDark
 window.walCharts._isDark = () =>
     document.documentElement.getAttribute('data-bs-theme') === 'dark';
 
-// opcoes.medirVariacao: liga a medição de variação por clique e arraste (ver _ligarMedicao).
-// opcoes.formato: 'valor' (padrão) ou 'percentual' — série em % acumulado (ex.: 12.5 = 12,5%);
-//   formata eixo e tooltip em % e faz a medição calcular a rentabilidade composta do período.
-window.walCharts.renderLine = (canvasId, labels, data, label, opcoes) => {
+window.walCharts._moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+window.walCharts._moedaCompacta = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
+window.walCharts._percentual = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+window.walCharts._percentualEixo = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
+
+// Uma série só (cotação do ativo). Mantida para as telas antigas; é um atalho de renderSeries.
+window.walCharts.renderLine = (canvasId, labels, data, label, opcoes) =>
+    window.walCharts.renderSeries(canvasId, labels, [{ label: label, data: data }], opcoes);
+
+// Várias séries no mesmo eixo. A primeira é a principal: recebe a medição e o preenchimento.
+//   series: [{ label, data, cor, tracejado, preenchido }]
+//   opcoes.medirVariacao: liga a medição por clique e arraste (ver _ligarMedicao).
+//   opcoes.formato: 'valor' (padrão) ou 'percentual' — série em % acumulado (12.5 = 12,5%); formata eixo e
+//     tooltip em % e faz a medição calcular a rentabilidade composta do período, de cada série.
+//   opcoes.ocultarValores: mantém o desenho, sem R$ no eixo, no tooltip nem na medição.
+window.walCharts.renderSeries = (canvasId, labels, series, opcoes) => {
     // Destrói a instância anterior primeiro: se o canvas saiu da tela (período sem dados, troca de ativo),
     // o gráfico antigo não pode ficar preso a um elemento que não existe mais.
     window.walCharts.destroy(canvasId);
 
     const canvas = document.getElementById(canvasId);
-    if (!canvas || !data || data.length === 0) return;
+    if (!canvas || !series || series.length === 0 || !series[0].data || series[0].data.length === 0) return;
 
+    opcoes = opcoes || {};
     const cores = walCharts._themeColors(walCharts._isDark());
-    const medir = !!(opcoes && opcoes.medirVariacao);
-    const percentual = !!(opcoes && opcoes.formato === 'percentual');
-    // Valores ocultos (olho): mantém o desenho da linha, mas sem números no eixo nem no tooltip;
-    // a medição mostra só a variação em %
-    const oculto = !!(opcoes && opcoes.ocultarValores) && !percentual;
+    const medir = !!opcoes.medirVariacao;
+    const percentual = opcoes.formato === 'percentual';
+    const oculto = !!opcoes.ocultarValores && !percentual;
     const formatarPct = (v) => `${walCharts._percentualEixo.format(v)}%`;
+
+    const datasets = series.map((s, i) => {
+        const cor = s.cor || '#0d6efd';
+        return {
+            label: s.label,
+            data: s.data,
+            borderColor: cor,
+            backgroundColor: s.preenchido || (i === 0 && s.preenchido === undefined) ? cor + '1a' : 'transparent',
+            fill: s.preenchido === undefined ? i === 0 : !!s.preenchido,
+            borderDash: s.tracejado ? [6, 4] : [],
+            tension: 0.15,
+            pointRadius: 0,
+            pointHoverRadius: 3,
+            borderWidth: i === 0 ? 2 : 1.75,
+            spanGaps: true,
+            order: i === 0 ? 0 : 1
+        };
+    });
+
+    const rotulo = (ctx) => {
+        if (ctx.parsed.y === null || ctx.parsed.y === undefined) return `${ctx.dataset.label}: —`;
+        if (percentual) return `${ctx.dataset.label}: ${formatarPct(ctx.parsed.y)}`;
+        if (oculto) return `${ctx.dataset.label}: R$ •••••`;
+        return `${ctx.dataset.label}: ${walCharts._moeda.format(ctx.parsed.y)}`;
+    };
 
     const chart = window.walCharts._instances[canvasId] = new Chart(canvas, {
         type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: label,
-                data: data,
-                borderColor: '#0d6efd',
-                backgroundColor: 'rgba(13, 110, 253, 0.1)',
-                fill: true,
-                tension: 0.15,
-                pointRadius: 0,
-                borderWidth: 2
-            }]
-        },
+        data: { labels: labels, datasets: datasets },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: false,
             // Folga à direita do último ponto: sem ela, a última data fica colada na borda e é quase
             // impossível parar o mouse em cima dela (ver _bordaDireitaPlugin)
             layout: { padding: { right: walCharts._folgaDireita } },
-            // Com a medição, o tooltip acompanha o eixo X (não exige acertar o ponto, que tem raio 0)
-            interaction: medir ? { mode: 'index', intersect: false } : undefined,
+            // O tooltip acompanha o eixo X (não exige acertar o ponto, que tem raio 0)
+            interaction: { mode: 'index', intersect: false },
             plugins: {
                 legend: { display: false },
-                tooltip: {
-                    enabled: true,
-                    callbacks: percentual
-                        ? { label: (ctx) => `${ctx.dataset.label}: ${formatarPct(ctx.parsed.y)}` }
-                        : oculto
-                            ? { label: (ctx) => `${ctx.dataset.label}: R$ •••••` }
-                            : {}
-                }
+                tooltip: { enabled: true, callbacks: { label: rotulo } }
             },
             scales: {
                 x: {
-                    ticks: { maxTicksLimit: 8, color: cores.text },
+                    ticks: { maxTicksLimit: 8, maxRotation: 0, color: cores.text },
                     grid: { color: cores.grid }
                 },
                 y: {
                     beginAtZero: false,
                     ticks: percentual
                         ? { color: cores.text, callback: (v) => formatarPct(v) }
-                        : { color: cores.text, display: !oculto },
+                        : { color: cores.text, display: !oculto, callback: (v) => `R$ ${walCharts._moedaCompacta.format(v)}` },
                     grid: { color: cores.grid }
                 }
             }
@@ -98,9 +116,9 @@ window.walCharts._bordaDireitaPlugin = {
 
         const ultimo = chart.data.labels.length - 1;
         const atual = chart.getActiveElements();
-        if (atual.length === 1 && atual[0].index === ultimo) return;
+        if (atual.length > 0 && atual[0].index === ultimo) return;
 
-        const ativos = [{ datasetIndex: 0, index: ultimo }];
+        const ativos = chart.data.datasets.map((_, i) => ({ datasetIndex: i, index: ultimo }));
         chart.setActiveElements(ativos);
         if (chart.options.plugins.tooltip.enabled) chart.tooltip.setActiveElements(ativos, { x: e.x, y: e.y });
         args.changed = true;
@@ -113,37 +131,40 @@ window.walCharts._bordaDireitaPlugin = {
 // depois de soltar o mouse; um clique simples a remove.
 // ---------------------------------------------------------------------------------------------
 
-window.walCharts._moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
-window.walCharts._percentual = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-window.walCharts._percentualEixo = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
-
-// Cores de alta/baixa do Bootstrap (success/danger), na variação legível de cada tema
+// Cores de alta/baixa (success/danger), na variação legível de cada tema
 window.walCharts._coresMedicao = (isDark, alta) => ({
     serie: alta ? (isDark ? '#75b798' : '#198754') : (isDark ? '#ea868f' : '#dc3545'),
     fundo: isDark ? 'rgba(33, 37, 41, 0.92)' : 'rgba(255, 255, 255, 0.92)',
+    texto: isDark ? '#e9ecef' : '#212529',
     secundario: isDark ? '#adb5bd' : '#6c757d'
 });
 
-// Texto principal da medição entre dois valores da série (v0 = mais antigo, v1 = mais recente).
-//   'valor':      diferença em R$ e variação simples em %.
-//   'percentual': a série é rentabilidade acumulada em %, então o período rende (1 + v1) / (1 + v0) - 1
-//                 — a diferença simples (v1 - v0) erraria sempre que já houvesse ganho ou perda acumulado.
-window.walCharts._resultadoMedicao = (formato, v0, v1) => {
-    const sinal = (x) => x > 0 ? '+' : x < 0 ? '−' : '';
-    const pct = (x) => `${sinal(x)}${walCharts._percentual.format(Math.abs(x))}%`;
+window.walCharts._sinalPct = (x) =>
+    `${x > 0 ? '+' : x < 0 ? '−' : ''}${walCharts._percentual.format(Math.abs(x))}%`;
 
+// Variação de uma série percentual (rentabilidade acumulada em %) entre dois pontos:
+// (1 + v1) / (1 + v0) - 1 — a diferença simples erraria sempre que já houvesse ganho ou perda acumulado.
+window.walCharts._periodoPercentual = (v0, v1) => {
+    const base = 1 + v0 / 100;
+    return base <= 0 ? null : ((1 + v1 / 100) / base - 1) * 100;
+};
+
+// Texto principal da medição entre dois valores da série principal (v0 = mais antigo, v1 = mais recente).
+//   'valor':      diferença em R$ e variação simples em %.
+//   'percentual': rentabilidade composta do período.
+window.walCharts._resultadoMedicao = (formato, v0, v1) => {
     if (formato === 'percentual') {
-        const base = 1 + v0 / 100;
-        if (base <= 0) return { linha1: '—', alta: true };
-        const periodo = ((1 + v1 / 100) / base - 1) * 100;
-        return { linha1: `${pct(periodo)} no período`, alta: periodo >= 0 };
+        const periodo = walCharts._periodoPercentual(v0, v1);
+        if (periodo === null) return { linha1: '—', alta: true };
+        return { linha1: `${walCharts._sinalPct(periodo)} no período`, alta: periodo >= 0 };
     }
 
     const diff = v1 - v0;
-    const variacao = v0 !== 0 ? pct(diff / v0 * 100) : '—';
+    const variacao = v0 !== 0 ? walCharts._sinalPct(diff / v0 * 100) : '—';
     // 'valor-oculto': mesma conta, sem mostrar o valor em R$
     if (formato === 'valor-oculto') return { linha1: `${variacao} no período`, alta: diff >= 0 };
-    return { linha1: `${sinal(diff)}${walCharts._moeda.format(Math.abs(diff))}  (${variacao})`, alta: diff >= 0 };
+    const sinal = diff > 0 ? '+' : diff < 0 ? '−' : '';
+    return { linha1: `${sinal}${walCharts._moeda.format(Math.abs(diff))}  (${variacao})`, alta: diff >= 0 };
 };
 
 window.walCharts._medicaoPlugin = {
@@ -152,13 +173,23 @@ window.walCharts._medicaoPlugin = {
         const sel = chart.$walMedicao;
         if (!sel || sel.inicio === null || sel.inicio === sel.fim) return;
 
-        const dados = chart.data.datasets[0].data;
+        const datasets = chart.data.datasets;
         const labels = chart.data.labels;
         const i0 = Math.min(sel.inicio, sel.fim);
         const i1 = Math.max(sel.inicio, sel.fim);
-        const v0 = Number(dados[i0]);
-        const v1 = Number(dados[i1]);
+        const v0 = Number(datasets[0].data[i0]);
+        const v1 = Number(datasets[0].data[i1]);
         const { linha1, alta } = walCharts._resultadoMedicao(chart.$walFormato, v0, v1);
+
+        // Rentabilidade: cada benchmark no mesmo período, para comparar com a carteira
+        const comparacoes = chart.$walFormato !== 'percentual' ? [] : datasets.slice(1)
+            .map(d => {
+                const a = d.data[i0], b = d.data[i1];
+                if (a === null || a === undefined || b === null || b === undefined) return null;
+                const p = walCharts._periodoPercentual(Number(a), Number(b));
+                return p === null ? null : { texto: `${d.label}: ${walCharts._sinalPct(p)}`, cor: d.borderColor };
+            })
+            .filter(c => c !== null);
 
         const isDark = walCharts._isDark();
         const cores = walCharts._coresMedicao(isDark, alta);
@@ -184,7 +215,7 @@ window.walCharts._medicaoPlugin = {
         }
         ctx.stroke();
 
-        // Marcadores nos dois pontos da série
+        // Marcadores nos dois pontos da série principal
         ctx.lineWidth = 2;
         ctx.strokeStyle = isDark ? '#212529' : '#ffffff';
         ctx.fillStyle = cores.serie;
@@ -196,16 +227,18 @@ window.walCharts._medicaoPlugin = {
         }
 
         // Caixa com o resultado, centralizada sobre a faixa e presa dentro da área do gráfico
-        const linha2 = `${labels[i0]} → ${labels[i1]}`;
-        const fonte = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+        const linhaDatas = `${labels[i0]} → ${labels[i1]}`;
+        const fonte = 'Roboto, system-ui, -apple-system, "Segoe UI", sans-serif';
+        const alturaLinha = 16;
 
         ctx.font = `600 13px ${fonte}`;
-        const w1 = ctx.measureText(linha1).width;
+        let largura = ctx.measureText(linha1).width;
         ctx.font = `12px ${fonte}`;
-        const w2 = ctx.measureText(linha2).width;
+        largura = Math.max(largura, ctx.measureText(linhaDatas).width);
+        for (const c of comparacoes) largura = Math.max(largura, ctx.measureText(c.texto).width + 14);
+        largura += 16;
 
-        const largura = Math.max(w1, w2) + 16;
-        const altura = 42;
+        const altura = 42 + comparacoes.length * alturaLinha + (comparacoes.length ? 4 : 0);
         const bx = Math.max(area.left, Math.min(area.right - largura, (x0 + x1) / 2 - largura / 2));
         const by = area.top + 6;
 
@@ -223,9 +256,18 @@ window.walCharts._medicaoPlugin = {
         ctx.font = `600 13px ${fonte}`;
         ctx.fillStyle = cores.serie;
         ctx.fillText(linha1, bx + 8, by + 18);
+
         ctx.font = `12px ${fonte}`;
+        comparacoes.forEach((c, k) => {
+            const ly = by + 18 + (k + 1) * alturaLinha;
+            ctx.fillStyle = c.cor;
+            ctx.fillRect(bx + 8, ly - 8, 8, 8);
+            ctx.fillStyle = cores.texto;
+            ctx.fillText(c.texto, bx + 22, ly);
+        });
+
         ctx.fillStyle = cores.secundario;
-        ctx.fillText(linha2, bx + 8, by + 34);
+        ctx.fillText(linhaDatas, bx + 8, by + altura - 8);
 
         ctx.restore();
     }

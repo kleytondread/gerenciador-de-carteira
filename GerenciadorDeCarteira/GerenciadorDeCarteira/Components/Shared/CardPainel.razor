@@ -1,0 +1,34 @@
+@* Card padrão dos painéis: título (h2) com subtítulo opcional, ações à direita e corpo *@
+<MudPaper Outlined="true" Class="@($"wal-card {Class}")">
+    <header class="wal-card-header">
+        <h2 class="wal-card-titulo">
+            @Titulo
+            @if (Subtitulo is not null)
+            {
+                <span class="wal-card-sub">@Subtitulo</span>
+            }
+        </h2>
+        @if (Acoes is not null)
+        {
+            <div class="wal-card-acoes">@Acoes</div>
+        }
+    </header>
+    <div class="@(SemEspacamento ? "wal-card-corpo-livre" : "wal-card-corpo")">
+        @ChildContent
+    </div>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public string Titulo { get; set; } = "";
+
+    [Parameter] public string? Subtitulo { get; set; }
+
+    [Parameter] public RenderFragment? Acoes { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Corpo sem padding (tabelas que vão de borda a borda).</summary>
+    [Parameter] public bool SemEspacamento { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+}

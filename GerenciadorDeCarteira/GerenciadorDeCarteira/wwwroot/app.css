@@ -248,6 +248,307 @@ h1:focus {
     text-align: start;
 }
 
+/* ── Painéis (Dashboard): grade, cards e peças comuns ───────────────────────── */
+
+/* 12 colunas. "dense" deixa cards menores subirem para buracos da linha de cima (usado no ultrawide) */
+.wal-painel {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-auto-flow: row dense;
+    align-items: start;
+    gap: 20px;
+}
+
+.wal-s4 { grid-column: span 4; }
+.wal-s5 { grid-column: span 5; }
+.wal-s7 { grid-column: span 7; }
+.wal-s8 { grid-column: span 8; }
+.wal-s12 { grid-column: span 12; }
+
+/* Ultrawide (2560): gráfico 9 + alocação 3 | resumo 5 + contribuição 4 + proventos 3 | mensal | drawdown */
+@media (min-width: 2300px) {
+    .wal-xl3 { grid-column: span 3; }
+    .wal-xl4 { grid-column: span 4; }
+    .wal-xl5 { grid-column: span 5; }
+    .wal-xl9 { grid-column: span 9; }
+    .wal-xl12 { grid-column: span 12; }
+}
+
+/* Abaixo de 1100 px cada card ocupa a linha inteira */
+@media (max-width: 1099.98px) {
+    .wal-painel > * { grid-column: 1 / -1 !important; }
+}
+
+.wal-card {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    border-radius: 12px !important;
+}
+
+.wal-card-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    min-height: 36px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--mud-palette-lines-default);
+}
+
+.wal-card-titulo {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.wal-card-sub {
+    margin-left: 8px;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--mud-palette-text-secondary);
+}
+
+.wal-card-acoes {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+}
+
+.wal-card-corpo { padding: 16px 20px; }
+
+.wal-card-rodape {
+    display: flex;
+    justify-content: center;
+    padding: 6px;
+    border-top: 1px solid var(--mud-palette-lines-default);
+}
+
+/* Tabelas largas rolam dentro do card, nunca a página */
+.wal-rolagem { overflow-x: auto; }
+
+.wal-num {
+    text-align: right !important;
+    white-space: nowrap;
+}
+
+.wal-forte { font-weight: 600; }
+
+.wal-nome {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
+}
+
+.wal-tabela.mud-table { background: transparent; }
+
+    .wal-tabela th {
+        font-size: 12px !important;
+        font-weight: 500 !important;
+        color: var(--mud-palette-text-secondary) !important;
+        white-space: nowrap;
+    }
+
+    .wal-tabela tbody th {
+        font-size: 13px !important;
+        color: var(--mud-palette-text-primary) !important;
+        text-align: left;
+    }
+
+    .wal-tabela td { white-space: nowrap; }
+
+.wal-tabela-compacta td { padding-top: 5px !important; padding-bottom: 5px !important; }
+
+.wal-linha-ref th, .wal-linha-ref td { color: var(--mud-palette-text-secondary) !important; }
+
+.wal-tabela-clicavel tbody tr { cursor: pointer; }
+
+    .wal-tabela-clicavel tbody tr:hover .wal-chevron { color: var(--mud-palette-primary); }
+
+.wal-chevron {
+    width: 28px;
+    color: var(--mud-palette-text-disabled);
+}
+
+.wal-quadrado {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 8px;
+    border-radius: 3px;
+    vertical-align: baseline;
+}
+
+/* Gráfico principal: controles acima do canvas */
+.wal-grafico-controles {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin-bottom: 12px;
+}
+
+.wal-dica { color: var(--mud-palette-text-secondary); cursor: help; }
+
+.wal-legenda {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* Amostra de linha: tracejada para benchmarks e referências, cheia para a carteira */
+.wal-traco {
+    display: inline-block;
+    width: 16px;
+    height: 0;
+    margin-right: 6px;
+    border-top: 2px dashed;
+    vertical-align: middle;
+}
+
+.wal-traco-cheio {
+    margin-right: 0;
+    border-top-style: solid;
+    border-top-width: 3px;
+}
+
+.wal-grafico { position: relative; }
+
+/* Alocação */
+.wal-rosca {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    margin-bottom: 8px;
+}
+
+.wal-rosca-centro {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    pointer-events: none;
+}
+
+.wal-rosca-total { font-size: 16px; font-weight: 600; }
+
+.wal-barras-ativos, .wal-divergente {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 13px;
+}
+
+    .wal-barras-ativos li {
+        display: grid;
+        grid-template-columns: 96px minmax(0, 1fr) 56px;
+        align-items: center;
+        gap: 10px;
+    }
+
+.wal-barra-trilho {
+    height: 10px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--mud-palette-background-gray);
+}
+
+    .wal-barra-trilho > span { display: block; height: 100%; border-radius: 3px; }
+
+/* .wal-card na frente: vence as regras de link do Bootstrap ([data-bs-theme] a), ainda carregado */
+.wal-card .wal-barras-ativos a, .wal-card .wal-divergente a, .wal-card .wal-tabela a {
+    color: inherit;
+    text-decoration: none;
+}
+
+    .wal-card .wal-barras-ativos a:hover, .wal-card .wal-divergente a:hover, .wal-card .wal-tabela a:hover {
+        color: var(--mud-palette-primary);
+    }
+
+/* Contribuição: eixo no meio, perdas à esquerda e ganhos à direita */
+.wal-divergente li {
+    display: grid;
+    grid-template-columns: 70px minmax(0, 1fr) minmax(0, 1fr) 112px;
+    align-items: center;
+}
+
+.wal-div-neg, .wal-div-pos {
+    display: flex;
+    align-items: center;
+    height: 18px;
+}
+
+.wal-div-neg { justify-content: flex-end; border-right: 1px solid var(--mud-palette-text-disabled); }
+
+    .wal-div-neg > span { height: 12px; border-radius: 3px 0 0 3px; background: #e34948; }
+
+.wal-div-pos > span { height: 12px; border-radius: 0 3px 3px 0; background: #1baf7a; }
+
+/* Proventos de 12 meses */
+.wal-mini-barras {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 64px;
+    margin-bottom: 12px;
+}
+
+    .wal-mini-barras > span {
+        flex: 1;
+        border-radius: 3px 3px 0 0;
+        background: #2a78d6;
+    }
+
+/* Resultado mensal (mapa de calor) */
+.wal-mapa {
+    width: 100%;
+    min-width: 1100px;
+    border-collapse: separate;
+    border-spacing: 3px;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+    .wal-mapa th {
+        padding: 6px 8px;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--mud-palette-text-secondary);
+        text-align: right;
+    }
+
+    .wal-mapa tbody th {
+        color: var(--mud-palette-text-primary);
+        font-weight: 600;
+        text-align: left;
+    }
+
+    .wal-mapa td {
+        padding: 7px 8px;
+        border-radius: 4px;
+        text-align: right;
+        white-space: nowrap;
+    }
+
+.wal-mapa-ref th, .wal-mapa-ref td {
+    padding-top: 0;
+    font-size: 12px;
+    font-weight: 400 !important;
+    color: var(--mud-palette-text-secondary) !important;
+}
+
 /* ── Overrides do modo escuro para cores fixas do template ──────────────────── */
 
 [data-bs-theme='dark'] a,

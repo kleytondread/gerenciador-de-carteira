@@ -1,0 +1,89 @@
+@* Rentabilidade, resultado e risco por período (mês, ano, 12M, 24M, início) *@
+
+<CardPainel Titulo="Resumo do portfólio" SemEspacamento="true" Class="@Class">
+    <div class="wal-rolagem">
+        <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="wal-tabela">
+            <thead>
+                <tr>
+                    <th></th>
+                    @foreach (var p in periodos)
+                    {
+                        <th class="wal-num" title="@($"{p.Inicio:dd/MM/yyyy} a {p.Fim:dd/MM/yyyy}")">@NomePeriodo(p.Periodo)</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <th scope="row" class="wal-forte">Rentabilidade</th>
+                    @foreach (var p in periodos)
+                    {
+                        <td class="wal-num wal-forte @Formatacao.CorGanhoPerda(p.Rentabilidade)">@Formatacao.Percentual(p.Rentabilidade)</td>
+                    }
+                </tr>
+                <tr>
+                    <th scope="row" title="Variação do patrimônio descontando aportes e vendas, com proventos">Resultado</th>
+                    @foreach (var p in periodos)
+                    {
+                        <td class="wal-num @Formatacao.CorGanhoPerda(p.Resultado)">@Formatacao.MoedaComSinal(p.Resultado, Mascarar)</td>
+                    }
+                </tr>
+                <tr class="wal-linha-ref">
+                    <th scope="row">CDI</th>
+                    @foreach (var p in periodos)
+                    {
+                        <td class="wal-num">@(p.Cdi is decimal c ? Formatacao.Percentual(c) : "–")</td>
+                    }
+                </tr>
+                <tr>
+                    <th scope="row" title="Rentabilidade da carteira ÷ rentabilidade do CDI no mesmo período">% do CDI</th>
+                    @foreach (var p in periodos)
+                    {
+                        <td class="wal-num @(p.PercentualCdi >= 1 ? "text-success" : "")">@(p.PercentualCdi is decimal pc ? Formatacao.PercentualSimples(pc, 0) : "–")</td>
+                    }
+                </tr>
+                <tr>
+                    <th scope="row" title="Desvio-padrão anualizado dos retornos dos dias úteis">Volatilidade</th>
+                    @foreach (var p in periodos)
+                    {
+                        <td class="wal-num">@(p.Volatilidade is decimal v ? Formatacao.PercentualSimples(v) : "–")</td>
+                    }
+                </tr>
+                <tr>
+                    <th scope="row" title="Retorno acima do CDI por unidade de volatilidade (anualizados)">Sharpe</th>
+                    @foreach (var p in periodos)
+                    {
+                        <td class="wal-num">@(p.Sharpe is decimal s ? s.ToString("N2", Formatacao.PtBR) : "–")</td>
+                    }
+                </tr>
+                <tr>
+                    <th scope="row" title="Maior queda a partir de um pico dentro do período">Drawdown máx.</th>
+                    @foreach (var p in periodos)
+                    {
+                        <td class="wal-num @(p.DrawdownMaximo < 0 ? "text-danger" : "")">@Formatacao.Percentual(p.DrawdownMaximo)</td>
+                    }
+                </tr>
+            </tbody>
+        </MudSimpleTable>
+    </div>
+</CardPainel>
+
+@code {
+    [Parameter, EditorRequired] public List<ResumoPeriodoResponse> Resumo { get; set; } = [];
+
+    [Parameter] public bool Mascarar { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private List<ResumoPeriodoResponse> periodos = [];
+
+    protected override void OnParametersSet() => periodos = Resumo.OrderBy(r => r.Periodo).ToList();
+
+    private static string NomePeriodo(PeriodoResumo periodo) => periodo switch
+    {
+        PeriodoResumo.Mes => "Mês",
+        PeriodoResumo.Ano => "Ano",
+        PeriodoResumo.DozeMeses => "12M",
+        PeriodoResumo.VinteQuatroMeses => "24M",
+        _ => "Início"
+    };
+}

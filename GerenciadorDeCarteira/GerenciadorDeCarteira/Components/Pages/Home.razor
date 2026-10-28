@@ -2,8 +2,6 @@
 @* OwningComponentBase: DbContext próprio por página (e descartado ao sair dela), em vez de um único
    DbContext compartilhado pelo circuito inteiro do Blazor Server. *@
 @inherits OwningComponentBase
-@inject IJSRuntime JsRuntime
-@inject NavigationManager Nav
 @inject PreferenciasExibicao Preferencias
 
 <PageTitle>Dashboard - Gestor de Carteira B3</PageTitle>
@@ -11,272 +9,43 @@
 
 @if (carregando)
 {
-    <p class="text-muted">Carregando...</p>
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Carregando o dashboard" />
 }
-else if (carteiraVazia)
+else if (dashboard is null)
 {
-    <div class="alert alert-info">
-        <h5 class="alert-heading">Sua carteira ainda está vazia</h5>
-        <p class="mb-0">
-            Para começar: <a href="ativos" class="alert-link">cadastre um ativo</a> e depois
-            <a href="movimentacoes" class="alert-link">registre sua primeira compra</a>.
-            A partir daí, o resumo, o gráfico e a tabela de posições aparecem aqui.
-        </p>
-    </div>
+    <MudPaper Outlined="true" Class="pa-8 d-flex flex-column align-center gap-3">
+        <MudIcon Icon="@Icons.Material.Outlined.AccountBalanceWallet" Size="Size.Large" />
+        <MudText Typo="Typo.h6">Sua carteira ainda está vazia</MudText>
+        <div class="d-flex gap-2 flex-wrap justify-center">
+            <MudButton Href="ativos" Variant="Variant.Outlined" Color="Color.Primary">Rastrear um ativo</MudButton>
+            <MudButton Href="transacoes" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false">Lançar a primeira compra</MudButton>
+        </div>
+    </MudPaper>
 }
 else
 {
-    @* 8.1 — Bloco de resumo *@
-    <div class="row g-3 mb-4">
-        <div class="col-sm-4">
-            <div class="card h-100">
-                <div class="card-body">
-                    <div class="text-muted small">Valor investido</div>
-                    <div class="fs-4 fw-semibold">@Moeda(resumo!.ValorInvestido)</div>
-                    <div class="text-muted small">Custo das posições abertas</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-sm-4">
-            <div class="card h-100">
-                <div class="card-body">
-                    <div class="text-muted small">Valor atual da carteira</div>
-                    @if (Preferencias.Carregada && Preferencias.OcultarValores && VariacaoSobreInvestido is decimal variacao)
-                    {
-                        <div class="fs-4 fw-semibold @CorGanhoPerda(variacao)">@FormatarPercentual(variacao)</div>
-                        <div class="text-muted small">Sobre o valor investido</div>
-                    }
-                    else
-                    {
-                        <div class="fs-4 fw-semibold">@Moeda(resumo!.ValorAtual)</div>
-                    }
-                </div>
-            </div>
-        </div>
-        <div class="col-sm-4">
-            <div class="card h-100">
-                <div class="card-body">
-                    <div class="text-muted small">Rentabilidade total</div>
-                    <div class="fs-4 fw-semibold @CorGanhoPerda(resumo!.RentabilidadeReais)">
-                        @if (Mascarar)
-                        {
-                            @* Com os valores ocultos, fica só o percentual *@
-                            @(resumo!.RentabilidadePercentual is decimal pctOculto ? FormatarPercentual(pctOculto) : ValorOculto)
-                        }
-                        else
-                        {
-                            @FormatarComSinal(resumo!.RentabilidadeReais)
-                            @if (resumo!.RentabilidadePercentual is decimal pct)
-                            {
-                                <small class="ms-1">(@FormatarPercentual(pct))</small>
-                            }
-                        }
-                    </div>
-                    <div class="text-muted small">Desde o início, com vendas e proventos</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    @* 8.2 — Gráfico da carteira, alternando patrimônio/rentabilidade, com seletor de período *@
-    <div class="card mb-4">
-        <div class="card-body">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                <h6 class="card-title text-muted mb-0">@TituloGrafico</h6>
-                @if (temDadosGrafico)
-                {
-                    <div class="d-flex flex-wrap gap-2">
-                        <div class="btn-group btn-group-sm" role="group" aria-label="Período do gráfico">
-                            @foreach (var p in Periodos)
-                            {
-                                <button type="button"
-                                        class="btn @(periodoGrafico == p ? "btn-secondary" : "btn-outline-secondary")"
-                                        @onclick="() => TrocarPeriodo(p)">@p</button>
-                            }
-                        </div>
-                        <div class="btn-group btn-group-sm" role="group" aria-label="Tipo de gráfico">
-                            <button type="button"
-                                    class="btn @(modoGrafico == ModoGrafico.Patrimonio ? "btn-primary" : "btn-outline-primary")"
-                                    @onclick="() => TrocarModoGrafico(ModoGrafico.Patrimonio)">Patrimônio</button>
-                            <button type="button"
-                                    class="btn @(modoGrafico == ModoGrafico.Rentabilidade ? "btn-primary" : "btn-outline-primary")"
-                                    @onclick="() => TrocarModoGrafico(ModoGrafico.Rentabilidade)">Rentabilidade</button>
-                        </div>
-                    </div>
-                }
-            </div>
-            @if (!temDadosGrafico)
-            {
-                <p class="text-muted mb-0">
-                    Ainda não há cotações persistidas para desenhar o gráfico —
-                    aguarde a carga histórica dos ativos concluir em segundo plano.
-                </p>
-            }
-            else
-            {
-                <div style="height:320px">
-                    <canvas id="grafico-rentabilidade"></canvas>
-                </div>
-                <p class="text-muted small mb-0 mt-2">
-                    Clique e arraste no gráfico para ver a variação no período.
-                    @if (modoGrafico == ModoGrafico.Patrimonio)
-                    {
-                        <span>No patrimônio, a variação inclui os aportes e as vendas.</span>
-                    }
-                    else
-                    {
-                        <span>
-                            A rentabilidade desconta aportes e vendas (método de cotas) e inclui os proventos
-                            pelo valor bruto — o JCP aparece sem o desconto dos 15% de IR.
-                        </span>
-                    }
-                </p>
-            }
-        </div>
-    </div>
-
-    @* 8.3 — Tabela de posições *@
-    <div class="card">
-        <div class="card-body">
-            <h6 class="card-title text-muted">Posições</h6>
-            @if (posicoes.Count == 0)
-            {
-                <p class="text-muted mb-0">Nenhuma posição em aberto (compras e vendas se anularam).</p>
-            }
-            else
-            {
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover align-middle mb-0">
-                        <thead>
-                            <tr class="text-nowrap">
-                                <th>Ativo</th>
-                                <th class="text-end">Quantidade</th>
-                                <th class="text-end">Preço médio</th>
-                                <th class="text-end">Cotação atual</th>
-                                <th class="text-end">Variação dia</th>
-                                <th class="text-end">@(Mascarar ? "% da carteira" : "Valor da posição")</th>
-                                <th class="text-end">Rentabilidade</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var p in posicoes)
-                            {
-                                <tr style="cursor:pointer" title="Ver detalhe de @p.Ticker"
-                                    @onclick="() => AbrirDetalhe(p.AtivoId)">
-                                    @* Ticker e nome na mesma linha, para a linha ficar baixa; nome repetido some *@
-                                    <td class="text-nowrap">
-                                        <span class="fw-semibold">@p.Ticker</span>
-                                        @if (!string.Equals(p.Nome, p.Ticker, StringComparison.OrdinalIgnoreCase))
-                                        {
-                                            <small class="text-muted ms-1">@p.Nome</small>
-                                        }
-                                    </td>
-                                    <td class="text-end">@(Mascarar ? "•••" : FormatarQuantidade(p))</td>
-                                    <td class="text-end">@p.PrecoMedio.ToString("C2", PtBR)</td>
-                                    <td class="text-end">@(p.CotacaoAtual?.ToString("C2", PtBR) ?? "—")</td>
-                                    <td class="text-end @CorGanhoPerda(p.VariacaoDiaPercentual)">
-                                        @(p.VariacaoDiaPercentual is decimal v ? FormatarPercentual(v) : "—")
-                                    </td>
-                                    <td class="text-end">
-                                        @if (Mascarar)
-                                        {
-                                            @(p.ValorPosicao is decimal vp && ValorTotalPosicoes > 0
-                                                ? (vp / ValorTotalPosicoes).ToString("P1", PtBR)
-                                                : "—")
-                                        }
-                                        else
-                                        {
-                                            @(p.ValorPosicao?.ToString("C2", PtBR) ?? "—")
-                                        }
-                                    </td>
-                                    <td class="text-end @CorGanhoPerda(p.RentabilidadePercentual)">
-                                        @(p.RentabilidadePercentual is decimal r ? FormatarPercentual(r) : "—")
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-                <small class="text-muted">Clique em uma linha para ver o detalhe do ativo.</small>
-            }
-        </div>
+    @* Ordem pensada para a grade: em Full HD 8+4 | 7+5 | 12 | 8+4; em ultrawide os cards menores sobem (ver app.css) *@
+    <div class="wal-painel">
+        <GraficoEvolucao Serie="dashboard.Serie" Mascarar="Preferencias.Mascarar" Class="wal-s8 wal-xl9" />
+        <CardAlocacao Posicoes="dashboard.Posicoes" Mascarar="Preferencias.Mascarar" Class="wal-s4 wal-xl3" />
+        <CardResumoPortfolio Resumo="dashboard.Resumo" Mascarar="Preferencias.Mascarar" Class="wal-s7 wal-xl5" />
+        <CardContribuicao Contribuicao="dashboard.Contribuicao12Meses" Mascarar="Preferencias.Mascarar" Class="wal-s5 wal-xl4" />
+        <CardResultadoMensal ResultadoMensal="dashboard.ResultadoMensal" Mascarar="Preferencias.Mascarar" Class="wal-s12" />
+        <GraficoDrawdown Drawdown="dashboard.Drawdown" Class="wal-s8 wal-xl12" />
+        <CardProventos Proventos12Meses="dashboard.Proventos12Meses" Mascarar="Preferencias.Mascarar" Class="wal-s4 wal-xl3" />
     </div>
 }
 
 @code {
-    private static readonly System.Globalization.CultureInfo PtBR = Formatacao.PtBR;
-
-    private ICarteiraService CarteiraService => ScopedServices.GetRequiredService<ICarteiraService>();
-
     private bool carregando = true;
-    private ResumoCarteiraResponse? resumo;
-    private List<PosicaoAtivoResponse> posicoes = [];
-    private List<PontoRentabilidadeResponse> rentabilidade = [];
-    private bool precisaRenderizarGrafico;
-    private bool graficoCriado;
-
-    private enum ModoGrafico { Patrimonio, Rentabilidade }
-    private ModoGrafico modoGrafico = ModoGrafico.Patrimonio;
-
-    // Ocultar valores (olho da barra superior): troca valores em R$ por percentuais
-    private const string ValorOculto = "R$ •••••";
-    private bool Mascarar => Preferencias.Mascarar;
-
-    private string Moeda(decimal valor) => Mascarar ? ValorOculto : valor.ToString("C2", PtBR);
-
-    private decimal? VariacaoSobreInvestido =>
-        resumo is { ValorInvestido: > 0 } r ? r.ValorAtual / r.ValorInvestido - 1 : null;
-
-    private decimal ValorTotalPosicoes => posicoes.Sum(p => p.ValorPosicao ?? 0);
-
-    private const string PeriodoInicio = "Início";
-    private static readonly string[] Periodos = ["5D", "1M", "6M", "1A", "YTD", "24M", PeriodoInicio];
-    private string periodoGrafico = PeriodoInicio;
-
-    private string TituloGrafico => modoGrafico == ModoGrafico.Patrimonio
-        ? "Evolução do patrimônio"
-        : periodoGrafico == PeriodoInicio ? "Rentabilidade acumulada" : "Rentabilidade no período";
-
-    // Pontos do período escolhido. Fins de semana ficam de fora (o valor repete o da sexta e só
-    // achataria a linha nos períodos curtos). O primeiro ponto é o último dia ANTES do período: é a
-    // base sobre a qual o período rende (ex.: YTD parte do fechamento de 31/dez, como no Gorila).
-    private List<PontoRentabilidadeResponse> PontosDoPeriodo()
-    {
-        var dias = rentabilidade.Where(p => p.Data.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)).ToList();
-        if (dias.Count == 0) return dias;
-
-        var fim = dias[^1].Data;
-        DateOnly? inicio = periodoGrafico switch
-        {
-            "5D" => dias[Math.Max(dias.Count - 5, 0)].Data,
-            "1M" => fim.AddMonths(-1),
-            "6M" => fim.AddMonths(-6),
-            "1A" => fim.AddYears(-1),
-            "YTD" => new DateOnly(fim.Year, 1, 1),
-            "24M" => fim.AddMonths(-24),
-            _ => null
-        };
-        if (inicio is null) return dias;
-
-        var indiceBase = dias.FindLastIndex(p => p.Data < inicio.Value);
-        return dias.Skip(Math.Max(indiceBase, 0)).ToList();
-    }
-
-    private bool carteiraVazia => posicoes.Count == 0 && rentabilidade.Count == 0;
-
-    // Com movimentações mas sem nenhuma cotação carregada ainda, a série vem toda zerada —
-    // nesse caso mostra o aviso em vez de uma linha reta em R$ 0,00.
-    private bool temDadosGrafico => rentabilidade.Any(p => p.ValorCarteira != 0);
+    private DashboardResponse? dashboard;
 
     protected override async Task OnInitializedAsync()
     {
         Preferencias.Mudou += AoMudarPreferencias;
         try
         {
-            resumo = await CarteiraService.ObterResumoAsync();
-            posicoes = await CarteiraService.ObterPosicoesAsync();
-            rentabilidade = await CarteiraService.ObterRentabilidadeHistoricaAsync();
-            precisaRenderizarGrafico = temDadosGrafico;
+            dashboard = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterDashboardAsync();
         }
         finally
         {
@@ -286,99 +55,15 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-        {
-            // Lida antes do primeiro gráfico, para ele já sair no formato certo
-            await Preferencias.CarregarAsync();
-            StateHasChanged();
-        }
-
-        if (!precisaRenderizarGrafico) return;
-        precisaRenderizarGrafico = false;
-
-        var pontos = PontosDoPeriodo();
-        if (pontos.Count == 0) return;
-        var labels = pontos.Select(p => p.Data.ToString("dd/MM/yy")).ToArray();
-
-        if (modoGrafico == ModoGrafico.Patrimonio)
-        {
-            // Com os valores ocultos, o gráfico mantém o desenho mas não mostra R$ (eixo, tooltip e
-            // medição só em %). Um % sobre o primeiro dia não serviria: no "Início" a base seria o
-            // patrimônio de maio/2021 e o eixo iria a milhares de %.
-            var valores = pontos.Select(p => p.ValorCarteira).ToArray();
-            await JsRuntime.InvokeVoidAsync("walCharts.renderLine",
-                "grafico-rentabilidade", labels, valores, "Patrimônio",
-                new { medirVariacao = true, ocultarValores = Mascarar });
-        }
-        else
-        {
-            // Rentabilidade do período: a cota de cada dia dividida pela cota do primeiro ponto, então a
-            // linha começa em 0%. Em pontos percentuais para o gráfico (0,125 -> 12,5).
-            var cotaBase = 1 + pontos[0].RentabilidadeAcumulada;
-            var percentuais = pontos
-                .Select(p => Math.Round(((1 + p.RentabilidadeAcumulada) / cotaBase - 1) * 100, 4))
-                .ToArray();
-            await JsRuntime.InvokeVoidAsync("walCharts.renderLine",
-                "grafico-rentabilidade", labels, percentuais, "Rentabilidade",
-                new { medirVariacao = true, formato = "percentual" });
-        }
-        graficoCriado = true;
+        // Com os valores ocultos salvos, os cards já saem mascarados até a preferência ser lida
+        if (firstRender) await Preferencias.CarregarAsync();
     }
 
-    private void TrocarModoGrafico(ModoGrafico modo)
-    {
-        if (modo == modoGrafico) return;
-        modoGrafico = modo;
-        // Redesenha no próximo OnAfterRenderAsync (renderLine destrói a instância anterior do canvas)
-        precisaRenderizarGrafico = true;
-    }
-
-    private void AoMudarPreferencias()
-    {
-        // O gráfico de patrimônio troca entre R$ e % ao ocultar valores, e as cores do eixo mudam com o tema
-        precisaRenderizarGrafico = temDadosGrafico;
-        InvokeAsync(StateHasChanged);
-    }
-
-    private void TrocarPeriodo(string periodo)
-    {
-        if (periodo == periodoGrafico) return;
-        periodoGrafico = periodo;
-        precisaRenderizarGrafico = true;
-    }
-
-    private void AbrirDetalhe(int ativoId) => Nav.NavigateTo($"/posicoes/{ativoId}");
-
-    // Quantidade truncada (sem arredondar): título do Tesouro com 2 casas (ex.: 9,39), os demais inteiros
-    private static string FormatarQuantidade(PosicaoAtivoResponse p) => p.Tipo == TipoAtivo.Tesouro
-        ? (Math.Truncate(p.Quantidade * 100) / 100).ToString("N2", PtBR)
-        : Math.Truncate(p.Quantidade).ToString("N0", PtBR);
-
-    private static string CorGanhoPerda(decimal? valor) => Formatacao.CorGanhoPerda(valor);
-
-    private static string FormatarComSinal(decimal valor) => Formatacao.MoedaComSinal(valor);
-
-    private static string FormatarPercentual(decimal fracao) => Formatacao.Percentual(fracao);
+    private void AoMudarPreferencias() => InvokeAsync(StateHasChanged);
 
     protected override async ValueTask DisposeAsyncCore()
     {
         Preferencias.Mudou -= AoMudarPreferencias;
-
-        // Só há o que destruir se o gráfico foi criado via interop (OnAfterRenderAsync interativo).
-        // A instância do prerender estático também é descartada, e nela interop nem é permitido
-        // (lançaria InvalidOperationException) — por isso o flag, e não um try/catch mais largo.
-        if (graficoCriado)
-        {
-            try
-            {
-                await JsRuntime.InvokeVoidAsync("walCharts.destroy", "grafico-rentabilidade");
-            }
-            catch (JSDisconnectedException)
-            {
-                // Circuito já encerrado (fechamento de aba/navegação) — nada a limpar no browser.
-            }
-        }
-
         await base.DisposeAsyncCore();
     }
 }

@@ -1,0 +1,201 @@
+@* Gráfico principal do Dashboard (Chart.js: a medição por clique e arraste não existe no MudChart) *@
+@implements IAsyncDisposable
+@inject IJSRuntime Js
+@inject IServiceScopeFactory ScopeFactory
+
+<CardPainel Titulo="Evolução da carteira" Class="@Class">
+    <Acoes>
+        <MudToggleGroup T="string" Value="@periodo" ValueChanged="TrocarPeriodo" Size="Size.Small" Outlined="true"
+                        Delimiters="true" Color="Color.Primary" aria-label="Período">
+            @foreach (var p in Periodos)
+            {
+                <MudToggleItem T="string" Value="@p" Text="@p" />
+            }
+        </MudToggleGroup>
+    </Acoes>
+    <ChildContent>
+        <div class="wal-grafico-controles">
+            <MudToggleGroup T="string" Value="@modo" ValueChanged="TrocarModo" Size="Size.Small" Outlined="true"
+                            Delimiters="true" Color="Color.Primary" aria-label="Métrica">
+                <MudToggleItem T="string" Value="@ModoRentabilidade" Text="Rentabilidade" />
+                <MudToggleItem T="string" Value="@ModoPatrimonio" Text="Patrimônio" />
+            </MudToggleGroup>
+            <MudTooltip Text="Clique e arraste no gráfico para medir um período">
+                <MudIcon Icon="@Icons.Material.Outlined.Straighten" Size="Size.Small" Class="wal-dica" aria-label="Clique e arraste no gráfico para medir um período" />
+            </MudTooltip>
+
+            @if (modo == ModoRentabilidade)
+            {
+                <span class="wal-legenda"><span class="wal-traco wal-traco-cheio" style="border-color:@CoresSeries.Carteira"></span>Carteira</span>
+                <MudChipSet T="Benchmark" SelectionMode="SelectionMode.MultiSelection" SelectedValues="selecionados"
+                            SelectedValuesChanged="TrocarBenchmarks" Size="Size.Small" Variant="Variant.Outlined"
+                            SelectedColor="Color.Primary" CheckMark="true" aria-label="Comparar com">
+                    @foreach (var b in CoresSeries.Benchmarks)
+                    {
+                        <MudChip T="Benchmark" Value="b" Disabled="@(!selecionados.Contains(b) && selecionados.Count >= MaximoBenchmarks)">
+                            <span class="wal-traco" style="border-color:@CoresSeries.Cor(b)"></span>@CoresSeries.Nome(b)
+                        </MudChip>
+                    }
+                </MudChipSet>
+            }
+            else
+            {
+                <span class="wal-legenda"><span class="wal-traco wal-traco-cheio" style="border-color:@CoresSeries.Carteira"></span>Patrimônio</span>
+                <span class="wal-legenda"><span class="wal-traco" style="border-color:@CoresSeries.ValorAplicado"></span>Valor aplicado</span>
+            }
+        </div>
+        <div class="wal-grafico" style="height:360px">
+            <canvas id="@IdCanvas" role="img" aria-label="@DescricaoAcessivel"></canvas>
+        </div>
+    </ChildContent>
+</CardPainel>
+
+@code {
+    [Parameter, EditorRequired] public List<PontoSerieResponse> Serie { get; set; } = [];
+
+    [Parameter] public bool Mascarar { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private const string IdCanvas = "grafico-evolucao";
+    private const string ModoRentabilidade = "rentabilidade";
+    private const string ModoPatrimonio = "patrimonio";
+    private const string PeriodoInicio = "Início";
+    private const string ChaveBenchmarks = "wal-benchmarks";
+    // Mais que três linhas tracejadas deixa o gráfico ilegível
+    private const int MaximoBenchmarks = 3;
+    private static readonly string[] Periodos = ["1M", "6M", "YTD", "12M", "24M", "5A", PeriodoInicio];
+
+    private string periodo = PeriodoInicio;
+    private string modo = ModoRentabilidade;
+    private IReadOnlyCollection<Benchmark> selecionados = [Benchmark.CDI];
+    private readonly Dictionary<(Benchmark, DateOnly, DateOnly), Dictionary<DateOnly, decimal>> cacheBenchmarks = [];
+    private string? chaveDesenhada;
+    private bool graficoCriado;
+
+    private string DescricaoAcessivel => modo == ModoRentabilidade
+        ? $"Rentabilidade acumulada da carteira no período {periodo}"
+        : $"Patrimônio e valor aplicado no período {periodo}";
+
+    /// <summary>Linha enviada ao Chart.js (walCharts.renderSeries).</summary>
+    private sealed record SerieGrafico(string Label, decimal?[] Data, string Cor, bool Tracejado, bool Preenchido);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await LerBenchmarksSalvosAsync();
+
+        // Redesenha só quando algo que aparece no gráfico mudou
+        var chave = $"{modo}|{periodo}|{string.Join(',', selecionados.Order())}|{Mascarar}|{Serie.Count}|{(Serie.Count > 0 ? Serie[^1].Data : default)}";
+        if (chave == chaveDesenhada) return;
+        chaveDesenhada = chave;
+        await DesenharAsync();
+    }
+
+    private async Task DesenharAsync()
+    {
+        // Fins de semana repetem a sexta e só achatariam a linha
+        var pontos = Serie.Where(p => p.Data.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)).ToList();
+        if (pontos.Count == 0) return;
+
+        var fim = pontos[^1].Data;
+        // Mesma base do Resumo do portfólio (AnaliseCarteiraService.DataBase), para os números baterem:
+        // o período rende sobre o último dia até a data base
+        DateOnly? dataBase = periodo switch
+        {
+            "1M" => fim.AddMonths(-1),
+            "6M" => fim.AddMonths(-6),
+            "YTD" => new DateOnly(fim.Year - 1, 12, 31),
+            "12M" => fim.AddMonths(-12),
+            "24M" => fim.AddMonths(-24),
+            "5A" => fim.AddYears(-5),
+            _ => null
+        };
+        var indiceBase = dataBase is DateOnly d ? Math.Max(pontos.FindLastIndex(p => p.Data <= d), 0) : 0;
+        var janela = pontos.Skip(indiceBase).ToList();
+        var rotulos = janela.Select(p => p.Data.ToString("dd/MM/yy")).ToArray();
+
+        List<SerieGrafico> series;
+        object opcoes;
+        if (modo == ModoPatrimonio)
+        {
+            series =
+            [
+                new("Patrimônio", janela.Select(p => (decimal?)p.Valor).ToArray(), CoresSeries.Carteira, false, true),
+                new("Valor aplicado", janela.Select(p => (decimal?)p.ValorAplicado).ToArray(), CoresSeries.ValorAplicado, true, false)
+            ];
+            opcoes = new { medirVariacao = true, ocultarValores = Mascarar };
+        }
+        else
+        {
+            // Rentabilidade no período: cota de cada dia ÷ cota da base, em pontos percentuais (12,5 = 12,5%).
+            // Desde o início a base é a cota inicial (1), como no resumo e na barra superior.
+            var cotaBase = dataBase is null ? 1 : 1 + janela[0].RentabilidadeAcumulada;
+            series = [new("Carteira", janela.Select(p => (decimal?)Math.Round(((1 + p.RentabilidadeAcumulada) / cotaBase - 1) * 100, 4)).ToArray(),
+                          CoresSeries.Carteira, false, false)];
+            // Benchmark a partir da data base do período, mesmo quando ela cai num fim de semana (como o resumo
+            // e o Gorila): o primeiro ponto do gráfico, a sexta anterior, fica em 0
+            var inicioBenchmark = dataBase is DateOnly db && db > janela[0].Data ? db : janela[0].Data;
+            foreach (var b in CoresSeries.Benchmarks.Where(selecionados.Contains))
+            {
+                var acumulado = await BenchmarkAsync(b, inicioBenchmark, fim);
+                if (acumulado.Count == 0) continue;
+                series.Add(new(CoresSeries.Nome(b),
+                    janela.Select(p => p.Data < inicioBenchmark ? 0m
+                        : acumulado.TryGetValue(p.Data, out var v) ? Math.Round(v * 100, 4) : (decimal?)null).ToArray(),
+                    CoresSeries.Cor(b), true, false));
+            }
+            opcoes = new { medirVariacao = true, formato = "percentual" };
+        }
+
+        await Js.InvokeVoidAsync("walCharts.renderSeries", IdCanvas, rotulos, series, opcoes);
+        graficoCriado = true;
+    }
+
+    // Escopo próprio por consulta: o componente vive no circuito e não deve dividir o DbContext da página
+    private async Task<Dictionary<DateOnly, decimal>> BenchmarkAsync(Benchmark benchmark, DateOnly inicio, DateOnly fim)
+    {
+        if (cacheBenchmarks.TryGetValue((benchmark, inicio, fim), out var guardado)) return guardado;
+
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        var indices = scope.ServiceProvider.GetRequiredService<IIndicesReferenciaService>();
+        var taxa = benchmark == Benchmark.IpcaMais ? CoresSeries.TaxaIpcaMais : 0;
+        var serie = await indices.ObterRentabilidadeAcumuladaAsync(benchmark, inicio, fim, taxa);
+        return cacheBenchmarks[(benchmark, inicio, fim)] = serie.ToDictionary(p => p.Data, p => p.RentabilidadeAcumulada);
+    }
+
+    private async Task LerBenchmarksSalvosAsync()
+    {
+        var salvo = await Js.InvokeAsync<string?>("walPreferencias.obter", ChaveBenchmarks);
+        if (salvo is null) return;
+        selecionados = salvo.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(n => Enum.TryParse<Benchmark>(n, out var b) ? b : (Benchmark?)null)
+            .OfType<Benchmark>()
+            .Distinct()
+            .Take(MaximoBenchmarks)
+            .ToList();
+        StateHasChanged();
+    }
+
+    private void TrocarPeriodo(string novo) => periodo = novo;
+
+    private void TrocarModo(string novo) => modo = novo;
+
+    private async Task TrocarBenchmarks(IReadOnlyCollection<Benchmark>? novos)
+    {
+        selecionados = (novos ?? []).Take(MaximoBenchmarks).ToList();
+        await Js.InvokeVoidAsync("walPreferencias.definir", ChaveBenchmarks, string.Join(',', selecionados));
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!graficoCriado) return;
+        try
+        {
+            await Js.InvokeVoidAsync("walCharts.destroy", IdCanvas);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuito já encerrado (aba fechada) — nada a limpar no navegador
+        }
+    }
+}

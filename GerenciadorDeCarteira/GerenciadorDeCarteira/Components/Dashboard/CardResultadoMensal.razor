@@ -1,0 +1,125 @@
+@* Resultado de cada mês como mapa de calor: o tom acompanha o tamanho do ganho ou da perda, e o sinal fica sempre no texto *@
+
+<CardPainel Titulo="Resultado mensal" SemEspacamento="true" Class="@Class">
+    <Acoes>
+        <MudSwitch T="bool" @bind-Value="compararCdi" Color="Color.Primary" Size="Size.Small" Label="Comparar com CDI" />
+        <MudToggleGroup T="string" @bind-Value="unidade" Size="Size.Small" Outlined="true" Delimiters="true"
+                        Color="Color.Primary" aria-label="Unidade">
+            <MudToggleItem T="string" Value="@("pct")" Text="Rentabilidade" />
+            <MudToggleItem T="string" Value="@("brl")" Text="Resultado (R$)" />
+        </MudToggleGroup>
+    </Acoes>
+    <ChildContent>
+        <div class="wal-rolagem">
+            <table class="wal-mapa">
+                <thead>
+                    <tr>
+                        <th></th>
+                        @foreach (var nome in Meses)
+                        {
+                            <th>@nome</th>
+                        }
+                        <th>Ano</th>
+                        <th title="Rentabilidade acumulada desde o início até o fim do ano">Acumulado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var ano in AnosVisiveis)
+                    {
+                        <tr>
+                            <th scope="row">@ano.Ano</th>
+                            @for (var m = 1; m <= 12; m++)
+                            {
+                                var mes = ano.Meses.GetValueOrDefault(m);
+                                <td style="background:@Fundo(mes?.Rentabilidade, 0.08m)">@TextoMes(mes)</td>
+                            }
+                            <td class="wal-forte" style="background:@Fundo(ano.Rentabilidade, 0.25m)">@TextoAno(ano)</td>
+                            <td class="wal-forte">@Formatacao.Percentual(ano.Acumulado)</td>
+                        </tr>
+                        @if (compararCdi)
+                        {
+                            <tr class="wal-mapa-ref">
+                                <th scope="row">CDI</th>
+                                @for (var m = 1; m <= 12; m++)
+                                {
+                                    var cdi = ano.Meses.GetValueOrDefault(m)?.Cdi;
+                                    <td>@(cdi is decimal c ? Formatacao.Percentual(c) : "–")</td>
+                                }
+                                <td>@(ano.Cdi is decimal ca ? Formatacao.Percentual(ca) : "–")</td>
+                                <td></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (anos.Count > AnosIniciais)
+        {
+            <div class="wal-card-rodape">
+                <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small" OnClick="() => todosAnos = !todosAnos">
+                    @(todosAnos ? "Mostrar só os últimos 3 anos" : $"Ver todos os anos ({anos.Count})")
+                </MudButton>
+            </div>
+        }
+    </ChildContent>
+</CardPainel>
+
+@code {
+    [Parameter, EditorRequired] public List<ResultadoMensalResponse> ResultadoMensal { get; set; } = [];
+
+    [Parameter] public bool Mascarar { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private const int AnosIniciais = 3;
+    private static readonly string[] Meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+    private sealed record LinhaAno(
+        int Ano, Dictionary<int, ResultadoMensalResponse> Meses, decimal Rentabilidade, decimal Resultado, decimal Acumulado, decimal? Cdi);
+
+    private string unidade = "pct";
+    private bool compararCdi;
+    private bool todosAnos;
+    private List<LinhaAno> anos = [];
+
+    private IEnumerable<LinhaAno> AnosVisiveis => todosAnos ? anos : anos.Take(AnosIniciais);
+
+    protected override void OnParametersSet()
+    {
+        var acumulado = 1m;
+        anos = ResultadoMensal
+            .GroupBy(m => m.Ano)
+            .OrderBy(g => g.Key)
+            .Select(g =>
+            {
+                var rentabilidade = g.Aggregate(1m, (f, m) => f * (1 + m.Rentabilidade)) - 1;
+                acumulado *= 1 + rentabilidade;
+                // CDI do ano só quando todos os meses têm CDI
+                decimal? cdi = g.All(m => m.Cdi.HasValue) ? g.Aggregate(1m, (f, m) => f * (1 + m.Cdi!.Value)) - 1 : null;
+                return new LinhaAno(g.Key, g.ToDictionary(m => m.Mes), rentabilidade, g.Sum(m => m.Resultado), acumulado - 1, cdi);
+            })
+            .OrderByDescending(a => a.Ano)
+            .ToList();
+    }
+
+    private string TextoMes(ResultadoMensalResponse? mes) => mes is null
+        ? "–"
+        : unidade == "pct" ? Formatacao.Percentual(mes.Rentabilidade) : ValorCurto(mes.Resultado);
+
+    private string TextoAno(LinhaAno ano) =>
+        unidade == "pct" ? Formatacao.Percentual(ano.Rentabilidade) : ValorCurto(ano.Resultado);
+
+    // Sem centavos nem "R$" em cada célula: a tabela fica legível de relance
+    private string ValorCurto(decimal valor) => Mascarar
+        ? "•••"
+        : (valor > 0 ? "+" : "") + valor.ToString("N0", Formatacao.PtBR);
+
+    // Tom proporcional ao valor, limitado a 30% de opacidade para o texto continuar legível
+    private static string Fundo(decimal? valor, decimal escala)
+    {
+        if (valor is not decimal v || v == 0) return "transparent";
+        var alfa = Math.Min(Math.Abs(v) / escala, 1) * 0.30m;
+        var a = alfa.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        return v > 0 ? $"rgba(12,163,12,{a})" : $"rgba(208,59,59,{a})";
+    }
+}

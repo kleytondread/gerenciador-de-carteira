@@ -26,6 +26,23 @@ public record ResumoPeriodoResponse(
     decimal? Sharpe,
     decimal DrawdownMaximo);
 
+/// <param name="Valor">Patrimônio no dia.</param>
+/// <param name="ValorAplicado">Dinheiro posto na carteira até o dia: compras − vendas, acumulado.</param>
+/// <param name="RentabilidadeAcumulada">Desde o início, pelo método de cotas, como fração.</param>
+public record PontoSerieResponse(DateOnly Data, decimal Valor, decimal ValorAplicado, decimal RentabilidadeAcumulada);
+
+/// <summary>Tudo o que o Dashboard mostra, calculado de uma vez sobre a mesma série.</summary>
+/// <param name="Contribuicao12Meses">Soma igual ao resultado de 12 meses do resumo.</param>
+/// <param name="Proventos12Meses">Um item por mês, do 11º mês anterior até o mês da última cotação.</param>
+public record DashboardResponse(
+    List<PontoSerieResponse> Serie,
+    List<ResumoPeriodoResponse> Resumo,
+    List<ResultadoMensalResponse> ResultadoMensal,
+    DrawdownResponse Drawdown,
+    List<ContribuicaoAtivoResponse> Contribuicao12Meses,
+    List<ProventosPeriodoResponse> Proventos12Meses,
+    List<PosicaoDetalhadaResponse> Posicoes);
+
 public record ResultadoMensalResponse(int Ano, int Mes, decimal Rentabilidade, decimal Resultado, decimal? Cdi);
 
 public record PontoDrawdownResponse(DateOnly Data, decimal Drawdown);

@@ -12,81 +12,61 @@ public class AnaliseCarteiraService(
 {
     private const int DiasUteisNoAno = 252;
 
+    public async Task<DashboardResponse?> ObterDashboardAsync()
+    {
+        // A data final da série é conhecida antes de calcular, e a contribuição precisa da foto do início dos 12 meses
+        if (await DataFimSerieAsync() is not DateOnly fim) return null;
+        var base12Meses = fim.AddMonths(-12);
+
+        var motor = await MotorCarteira.CalcularAsync(db, [base12Meses]);
+        if (motor.Pontos.Count == 0) return null;
+
+        var pontos = motor.Pontos;
+        var cdi = await CdiAcumuladoAsync(pontos[0].Data, fim);
+        var tickers = await TickersAsync();
+        var inicioProventos = new DateOnly(fim.Year, fim.Month, 1).AddMonths(-11);
+
+        decimal aplicado = 0;
+        var serie = pontos.Select(p =>
+        {
+            aplicado += p.Compras - p.Vendas;
+            return new PontoSerieResponse(p.Data, p.Valor, aplicado, p.RentabilidadeAcumulada);
+        }).ToList();
+
+        return new DashboardResponse(
+            serie,
+            ResumoPeriodos(pontos, cdi),
+            ResultadoMensal(pontos, cdi),
+            Drawdown(pontos),
+            Contribuicao(motor, base12Meses, fim, tickers),
+            ProventosPorPeriodo(motor, inicioProventos, fim, AgrupamentoPeriodo.Mes),
+            MontarPosicoes(motor, await carteira.ObterPosicoesAsync()));
+    }
+
     public async Task<List<ResumoPeriodoResponse>> ObterResumoPeriodosAsync()
     {
         var pontos = (await MotorCarteira.CalcularAsync(db)).Pontos;
         if (pontos.Count == 0) return [];
-
-        var fim = pontos[^1].Data;
-        var cdi = await CdiAcumuladoAsync(pontos[0].Data, fim);
-
-        return Enum.GetValues<PeriodoResumo>()
-            .Select(periodo => Resumir(periodo, pontos, IndiceBase(pontos, DataBase(periodo, fim)), pontos.Count - 1, cdi))
-            .ToList();
+        return ResumoPeriodos(pontos, await CdiAcumuladoAsync(pontos[0].Data, pontos[^1].Data));
     }
 
     public async Task<List<ResultadoMensalResponse>> ObterResultadoMensalAsync()
     {
         var pontos = (await MotorCarteira.CalcularAsync(db)).Pontos;
         if (pontos.Count == 0) return [];
-
-        var cdi = await CdiAcumuladoAsync(pontos[0].Data, pontos[^1].Data);
-        var meses = new List<ResultadoMensalResponse>();
-        var indiceBase = -1;
-        for (var i = 0; i < pontos.Count; i++)
-        {
-            var ultimoDoMes = i == pontos.Count - 1 || pontos[i + 1].Data.Month != pontos[i].Data.Month;
-            if (!ultimoDoMes) continue;
-
-            var r = Resumir(PeriodoResumo.Mes, pontos, indiceBase, i, cdi);
-            meses.Add(new ResultadoMensalResponse(pontos[i].Data.Year, pontos[i].Data.Month, r.Rentabilidade, r.Resultado, r.Cdi));
-            indiceBase = i;
-        }
-        return meses;
+        return ResultadoMensal(pontos, await CdiAcumuladoAsync(pontos[0].Data, pontos[^1].Data));
     }
 
-    public async Task<DrawdownResponse> ObterDrawdownAsync()
-    {
-        var pontos = (await MotorCarteira.CalcularAsync(db)).Pontos;
-        var serie = new List<PontoDrawdownResponse>(pontos.Count);
-        decimal pico = 1, maximo = 0;
-        DateOnly? dataMaximo = null;
-        foreach (var p in pontos)
-        {
-            var cota = 1 + p.RentabilidadeAcumulada;
-            if (cota > pico) pico = cota;
-            var queda = cota / pico - 1;
-            serie.Add(new PontoDrawdownResponse(p.Data, queda));
-            if (queda < maximo)
-            {
-                maximo = queda;
-                dataMaximo = p.Data;
-            }
-        }
-        return new DrawdownResponse(serie, maximo, dataMaximo);
-    }
+    public async Task<DrawdownResponse> ObterDrawdownAsync() =>
+        Drawdown((await MotorCarteira.CalcularAsync(db)).Pontos);
 
     public async Task<List<ContribuicaoAtivoResponse>> ObterContribuicaoPorAtivoAsync(DateOnly inicio, DateOnly fim)
     {
+        if (fim < inicio) return [];
         var dataBase = inicio.AddDays(-1);
         var motor = await MotorCarteira.CalcularAsync(db, [dataBase, fim]);
-        if (motor.Pontos.Count == 0 || fim < inicio) return [];
-
-        // Fim depois da série: vale o último dia calculado
-        var dataFim = fim > motor.Pontos[^1].Data ? motor.Pontos[^1].Data : fim;
-        var tickers = await TickersAsync();
-
-        return motor.PorAtivo.Keys
-            .Select(id =>
-            {
-                var a = motor.FotoEm(dataBase, id);
-                var b = motor.FotoEm(dataFim, id);
-                var resultado = (b.Valor - a.Valor) - (b.Compras - a.Compras) + (b.Vendas - a.Vendas) + (b.Proventos - a.Proventos);
-                return new ContribuicaoAtivoResponse(id, tickers.GetValueOrDefault(id, "?"), resultado);
-            })
-            .Where(c => Math.Abs(c.Resultado) >= 0.005m)
-            .OrderByDescending(c => c.Resultado)
-            .ToList();
+        if (motor.Pontos.Count == 0) return [];
+        return Contribuicao(motor, dataBase, fim, await TickersAsync());
     }
 
     public async Task<List<PosicaoDetalhadaResponse>> ObterPosicoesDetalhadasAsync()
@@ -133,21 +113,7 @@ public class AnaliseCarteiraService(
         DateOnly inicio, DateOnly fim, AgrupamentoPeriodo agrupamento)
     {
         if (fim < inicio) return [];
-        var motor = await MotorCarteira.CalcularAsync(db);
-
-        DateOnly Grupo(DateOnly d) => agrupamento == AgrupamentoPeriodo.Mes ? new DateOnly(d.Year, d.Month, 1) : new DateOnly(d.Year, 1, 1);
-        var porGrupo = motor.ProventosRecebidos
-            .Where(p => p.DataPagamento >= inicio && p.DataPagamento <= fim)
-            .ToLookup(p => Grupo(p.DataPagamento));
-
-        var resultado = new List<ProventosPeriodoResponse>();
-        for (var g = Grupo(inicio); g <= fim; g = agrupamento == AgrupamentoPeriodo.Mes ? g.AddMonths(1) : g.AddYears(1))
-        {
-            var doGrupo = porGrupo[g].ToList();
-            decimal Soma(TipoProvento tipo) => doGrupo.Where(p => p.Tipo == tipo).Sum(p => p.Valor);
-            resultado.Add(new ProventosPeriodoResponse(g, Soma(TipoProvento.Dividendo), Soma(TipoProvento.JCP), Soma(TipoProvento.Rendimento)));
-        }
-        return resultado;
+        return ProventosPorPeriodo(await MotorCarteira.CalcularAsync(db), inicio, fim, agrupamento);
     }
 
     public async Task<List<PagadorProventosResponse>> ObterPagadoresAsync(DateOnly inicio, DateOnly fim)
@@ -175,6 +141,90 @@ public class AnaliseCarteiraService(
             })
             .OrderByDescending(p => p.Recebido)
             .ToList();
+    }
+
+    // ── Cálculos sobre a série (sem banco) ───────────────────────────────
+
+    private static List<ResumoPeriodoResponse> ResumoPeriodos(List<MotorCarteira.Ponto> pontos, Dictionary<DateOnly, decimal>? cdi)
+    {
+        var fim = pontos[^1].Data;
+        return Enum.GetValues<PeriodoResumo>()
+            .Select(periodo => Resumir(periodo, pontos, IndiceBase(pontos, DataBase(periodo, fim)), pontos.Count - 1, cdi))
+            .ToList();
+    }
+
+    private static List<ResultadoMensalResponse> ResultadoMensal(List<MotorCarteira.Ponto> pontos, Dictionary<DateOnly, decimal>? cdi)
+    {
+        var meses = new List<ResultadoMensalResponse>();
+        var indiceBase = -1;
+        for (var i = 0; i < pontos.Count; i++)
+        {
+            var ultimoDoMes = i == pontos.Count - 1 || pontos[i + 1].Data.Month != pontos[i].Data.Month;
+            if (!ultimoDoMes) continue;
+
+            var r = Resumir(PeriodoResumo.Mes, pontos, indiceBase, i, cdi);
+            meses.Add(new ResultadoMensalResponse(pontos[i].Data.Year, pontos[i].Data.Month, r.Rentabilidade, r.Resultado, r.Cdi));
+            indiceBase = i;
+        }
+        return meses;
+    }
+
+    private static DrawdownResponse Drawdown(List<MotorCarteira.Ponto> pontos)
+    {
+        var serie = new List<PontoDrawdownResponse>(pontos.Count);
+        decimal pico = 1, maximo = 0;
+        DateOnly? dataMaximo = null;
+        foreach (var p in pontos)
+        {
+            var cota = 1 + p.RentabilidadeAcumulada;
+            if (cota > pico) pico = cota;
+            var queda = cota / pico - 1;
+            serie.Add(new PontoDrawdownResponse(p.Data, queda));
+            if (queda < maximo)
+            {
+                maximo = queda;
+                dataMaximo = p.Data;
+            }
+        }
+        return new DrawdownResponse(serie, maximo, dataMaximo);
+    }
+
+    /// <summary>Resultado de cada ativo entre a foto da data base (exclusive) e o fim (inclusive).</summary>
+    private static List<ContribuicaoAtivoResponse> Contribuicao(
+        MotorCarteira motor, DateOnly dataBase, DateOnly fim, Dictionary<int, string> tickers)
+    {
+        // Fim depois da série: vale o último dia calculado
+        var dataFim = fim > motor.Pontos[^1].Data ? motor.Pontos[^1].Data : fim;
+
+        return motor.PorAtivo.Keys
+            .Select(id =>
+            {
+                var a = motor.FotoEm(dataBase, id);
+                var b = motor.FotoEm(dataFim, id);
+                var resultado = (b.Valor - a.Valor) - (b.Compras - a.Compras) + (b.Vendas - a.Vendas) + (b.Proventos - a.Proventos);
+                return new ContribuicaoAtivoResponse(id, tickers.GetValueOrDefault(id, "?"), resultado);
+            })
+            .Where(c => Math.Abs(c.Resultado) >= 0.005m)
+            .OrderByDescending(c => c.Resultado)
+            .ToList();
+    }
+
+    private static List<ProventosPeriodoResponse> ProventosPorPeriodo(
+        MotorCarteira motor, DateOnly inicio, DateOnly fim, AgrupamentoPeriodo agrupamento)
+    {
+        DateOnly Grupo(DateOnly d) => agrupamento == AgrupamentoPeriodo.Mes ? new DateOnly(d.Year, d.Month, 1) : new DateOnly(d.Year, 1, 1);
+        var porGrupo = motor.ProventosRecebidos
+            .Where(p => p.DataPagamento >= inicio && p.DataPagamento <= fim)
+            .ToLookup(p => Grupo(p.DataPagamento));
+
+        var resultado = new List<ProventosPeriodoResponse>();
+        for (var g = Grupo(inicio); g <= fim; g = agrupamento == AgrupamentoPeriodo.Mes ? g.AddMonths(1) : g.AddYears(1))
+        {
+            var doGrupo = porGrupo[g].ToList();
+            decimal Soma(TipoProvento tipo) => doGrupo.Where(p => p.Tipo == tipo).Sum(p => p.Valor);
+            resultado.Add(new ProventosPeriodoResponse(g, Soma(TipoProvento.Dividendo), Soma(TipoProvento.JCP), Soma(TipoProvento.Rendimento)));
+        }
+        return resultado;
     }
 
     private static List<PosicaoDetalhadaResponse> MontarPosicoes(MotorCarteira motor, List<PosicaoAtivoResponse> posicoes)
@@ -273,6 +323,21 @@ public class AnaliseCarteiraService(
             periodo, inicio, fim.Data, rentabilidade, resultado, cdiPeriodo,
             cdiPeriodo is > 0 ? rentabilidade / cdiPeriodo : null,
             volatilidade, sharpe, drawdown);
+    }
+
+    // ── Acesso a dados ───────────────────────────────────────────────────
+
+    // Mesma regra do motor: última cotação dos ativos com movimentação, ou a primeira movimentação
+    private async Task<DateOnly?> DataFimSerieAsync()
+    {
+        var primeira = await db.Movimentacoes.AsNoTracking().MinAsync(m => (DateOnly?)m.Data);
+        if (primeira is null) return null;
+
+        var ativoIds = db.Movimentacoes.Select(m => m.AtivoId).Distinct();
+        var ultimaCotacao = await db.CotacoesHistoricas.AsNoTracking()
+            .Where(c => ativoIds.Contains(c.AtivoId))
+            .MaxAsync(c => (DateOnly?)c.Data);
+        return ultimaCotacao is DateOnly u && u > primeira ? u : primeira;
     }
 
     private async Task<Dictionary<DateOnly, decimal>?> CdiAcumuladoAsync(DateOnly inicio, DateOnly fim)

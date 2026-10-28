@@ -1,0 +1,56 @@
+@* Quem mais somou e quem mais tirou do resultado dos últimos 12 meses (barras divergentes) *@
+
+<CardPainel Titulo="Contribuição por ativo" Subtitulo="12 meses" Class="@Class">
+    <Acoes>
+        <MudLink Href="posicoes" Typo="Typo.body2">Ver posições</MudLink>
+    </Acoes>
+    <ChildContent>
+        @if (itens.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">Sem resultado nos últimos 12 meses.</MudText>
+        }
+        else
+        {
+            <ul class="wal-divergente" aria-label="Resultado de cada ativo em 12 meses">
+                @foreach (var c in itens)
+                {
+                    <li>
+                        <a href="posicoes/@c.AtivoId" class="wal-forte">@c.Ticker</a>
+                        <span class="wal-div-neg">@if (c.Resultado < 0) { <span style="width:@Largura(c.Resultado)"></span> }</span>
+                        <span class="wal-div-pos">@if (c.Resultado > 0) { <span style="width:@Largura(c.Resultado)"></span> }</span>
+                        <span class="wal-num @Formatacao.CorGanhoPerda(c.Resultado)">@Formatacao.MoedaComSinal(c.Resultado, Mascarar)</span>
+                    </li>
+                }
+            </ul>
+        }
+    </ChildContent>
+</CardPainel>
+
+@code {
+    [Parameter, EditorRequired] public List<ContribuicaoAtivoResponse> Contribuicao { get; set; } = [];
+
+    [Parameter] public bool Mascarar { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    // Cinco que mais somaram e três que mais tiraram; com poucos ativos, todos
+    private const int Positivos = 5;
+    private const int Negativos = 3;
+
+    private List<ContribuicaoAtivoResponse> itens = [];
+    private decimal maior;
+
+    protected override void OnParametersSet()
+    {
+        var ordenados = Contribuicao.OrderByDescending(c => c.Resultado).ToList();
+        itens = ordenados.Count <= Positivos + Negativos
+            ? ordenados
+            : ordenados.Where(c => c.Resultado > 0).Take(Positivos)
+                .Concat(ordenados.Where(c => c.Resultado < 0).TakeLast(Negativos))
+                .ToList();
+        maior = itens.Count > 0 ? itens.Max(c => Math.Abs(c.Resultado)) : 0;
+    }
+
+    private string Largura(decimal resultado) =>
+        (maior > 0 ? Math.Abs(resultado) / maior * 100 : 0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+}

@@ -5,6 +5,9 @@ namespace Wal.Services;
 /// <summary>Métricas e visões derivadas da série diária da carteira (Dashboard, Posições, Eventos).</summary>
 public interface IAnaliseCarteiraService
 {
+    /// <summary>Série, resumo, resultado mensal, drawdown, contribuição e proventos de 12 meses e posições — um cálculo só. Nulo sem movimentações.</summary>
+    Task<DashboardResponse?> ObterDashboardAsync();
+
     /// <summary>Mês, ano, 12 meses, 24 meses e desde o início, terminando na cotação mais recente.</summary>
     Task<List<ResumoPeriodoResponse>> ObterResumoPeriodosAsync();
 

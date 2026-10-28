@@ -1,0 +1,46 @@
+@* Proventos recebidos nos últimos 12 meses: barras por mês e totais por tipo *@
+
+<CardPainel Titulo="Proventos" Subtitulo="12 meses" Class="@Class">
+    <Acoes>
+        <MudLink Href="eventos" Typo="Typo.body2">Ver eventos</MudLink>
+    </Acoes>
+    <ChildContent>
+        <div class="wal-mini-barras" role="img" aria-label="Proventos recebidos por mês nos últimos 12 meses">
+            @foreach (var m in Proventos12Meses)
+            {
+                <span title="@($"{m.Inicio.ToString("MMM/yy", Formatacao.PtBR)}: {Formatacao.Moeda(m.Total, Mascarar)}")"
+                      style="height:@Altura(m.Total)"></span>
+            }
+        </div>
+        <MudSimpleTable Dense="true" Elevation="0" Class="wal-tabela wal-tabela-compacta">
+            <tbody>
+                <tr><td><span class="wal-quadrado" style="background:#2a78d6"></span>Dividendos</td><td class="wal-num">@Formatacao.Moeda(Proventos12Meses.Sum(m => m.Dividendos), Mascarar)</td></tr>
+                <tr><td><span class="wal-quadrado" style="background:#eb6834"></span>JCP</td><td class="wal-num">@Formatacao.Moeda(Proventos12Meses.Sum(m => m.Jcp), Mascarar)</td></tr>
+                <tr><td><span class="wal-quadrado" style="background:#1baf7a"></span>Rendimentos</td><td class="wal-num">@Formatacao.Moeda(Proventos12Meses.Sum(m => m.Rendimentos), Mascarar)</td></tr>
+                <tr><td class="wal-forte">Total</td><td class="wal-num wal-forte">@Formatacao.Moeda(total, Mascarar)</td></tr>
+                <tr class="wal-linha-ref"><td>Média mensal</td><td class="wal-num">@Formatacao.Moeda(Proventos12Meses.Count > 0 ? total / Proventos12Meses.Count : 0, Mascarar)</td></tr>
+            </tbody>
+        </MudSimpleTable>
+    </ChildContent>
+</CardPainel>
+
+@code {
+    [Parameter, EditorRequired] public List<ProventosPeriodoResponse> Proventos12Meses { get; set; } = [];
+
+    [Parameter] public bool Mascarar { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private decimal total;
+    private decimal maior;
+
+    protected override void OnParametersSet()
+    {
+        total = Proventos12Meses.Sum(m => m.Total);
+        maior = Proventos12Meses.Count > 0 ? Proventos12Meses.Max(m => m.Total) : 0;
+    }
+
+    // Mês sem provento ainda aparece como um traço, para a régua de 12 meses ficar visível
+    private string Altura(decimal valor) =>
+        Math.Max(maior > 0 ? valor / maior * 100 : 0, 2).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+}

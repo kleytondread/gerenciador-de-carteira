@@ -1,0 +1,107 @@
+@* Alocação por classe (rosca do MudChart + tabela) ou por ativo (barras) *@
+
+<CardPainel Titulo="Alocação" Class="@Class">
+    <Acoes>
+        <MudToggleGroup T="string" @bind-Value="visao" Size="Size.Small" Outlined="true" Delimiters="true"
+                        Color="Color.Primary" aria-label="Agrupar por">
+            <MudToggleItem T="string" Value="@("classe")" Text="Classe" />
+            <MudToggleItem T="string" Value="@("ativo")" Text="Ativo" />
+        </MudToggleGroup>
+    </Acoes>
+    <ChildContent>
+        @if (visao == "classe")
+        {
+            <div class="wal-rosca">
+                <MudChart T="double" ChartType="ChartType.Donut" ChartSeries="@serieRosca" ChartLabels="@rotulosRosca"
+                          ChartOptions="@opcoesRosca" Width="210px" Height="210px" />
+                <div class="wal-rosca-centro" aria-hidden="true">
+                    <span class="wal-k">@Posicoes.Count ativos</span>
+                    <span class="wal-rosca-total">@Formatacao.Moeda(total, Mascarar)</span>
+                </div>
+            </div>
+            <MudSimpleTable Dense="true" Elevation="0" Class="wal-tabela">
+                <thead>
+                    <tr><th>Classe</th><th class="wal-num">Valor</th><th class="wal-num">Peso</th>
+                        <th class="wal-num" title="Cotação atual sobre o preço médio, sem proventos">Valorização</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in classes)
+                    {
+                        <tr>
+                            <td><span class="wal-quadrado" style="background:@CoresSeries.Cor(c.Tipo)"></span>@CoresSeries.NomeClasse(c.Tipo)</td>
+                            <td class="wal-num">@Formatacao.Moeda(c.Valor, Mascarar)</td>
+                            <td class="wal-num wal-forte">@Formatacao.PercentualSimples(c.Peso)</td>
+                            <td class="wal-num @Formatacao.CorGanhoPerda(c.Valorizacao)">@(c.Valorizacao is decimal v ? Formatacao.Percentual(v) : "–")</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+        else
+        {
+            <ul class="wal-barras-ativos" aria-label="Peso de cada ativo">
+                @foreach (var p in ativos)
+                {
+                    <li>
+                        <a href="posicoes/@p.AtivoId" class="wal-forte">@p.Ticker</a>
+                        <span class="wal-barra-trilho"><span style="width:@Largura(p.Peso);background:@CoresSeries.Cor(p.Tipo)"></span></span>
+                        <span class="wal-num">@Formatacao.PercentualSimples(p.Peso ?? 0)</span>
+                    </li>
+                }
+            </ul>
+        }
+    </ChildContent>
+</CardPainel>
+
+@code {
+    [Parameter, EditorRequired] public List<PosicaoDetalhadaResponse> Posicoes { get; set; } = [];
+
+    [Parameter] public bool Mascarar { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private sealed record Classe(TipoAtivo Tipo, decimal Valor, decimal Peso, decimal? Valorizacao);
+
+    private string visao = "classe";
+    private decimal total;
+    private List<Classe> classes = [];
+    private List<PosicaoDetalhadaResponse> ativos = [];
+    private List<ChartSeries<double>> serieRosca = [];
+    private string[] rotulosRosca = [];
+    private DonutChartOptions opcoesRosca = new();
+
+    protected override void OnParametersSet()
+    {
+        total = Posicoes.Sum(p => p.Valor ?? 0);
+        classes = CoresSeries.OrdemClasses
+            .Select(tipo =>
+            {
+                var daClasse = Posicoes.Where(p => p.Tipo == tipo).ToList();
+                var valor = daClasse.Sum(p => p.Valor ?? 0);
+                var custo = daClasse.Sum(p => p.Custo);
+                return new Classe(tipo, valor, total > 0 ? valor / total : 0, custo > 0 ? valor / custo - 1 : null);
+            })
+            .Where(c => c.Valor > 0)
+            .ToList();
+
+        ativos = Posicoes.OrderByDescending(p => p.Valor ?? 0).ToList();
+
+        serieRosca = [new ChartSeries<double> { Name = "Alocação", Data = new ChartData<double>(classes.Select(c => (double)c.Valor).ToList()) }];
+        rotulosRosca = classes.Select(c => CoresSeries.NomeClasse(c.Tipo)).ToArray();
+        // A tabela abaixo é a legenda; tooltip mostraria R$ mesmo com os valores ocultos
+        opcoesRosca = new DonutChartOptions
+        {
+            ChartPalette = classes.Select(c => CoresSeries.Cor(c.Tipo)).ToArray(),
+            ShowLegend = false,
+            ShowToolTips = false
+        };
+    }
+
+    // Barra proporcional ao maior peso, para as diferenças aparecerem mesmo entre pesos pequenos
+    private string Largura(decimal? peso)
+    {
+        var maior = ativos.Count > 0 ? ativos.Max(p => p.Peso ?? 0) : 0;
+        var fracao = maior > 0 ? (peso ?? 0) / maior : 0;
+        return (fracao * 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    }
+}

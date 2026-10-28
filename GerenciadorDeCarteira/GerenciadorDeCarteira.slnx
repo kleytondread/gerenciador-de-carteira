@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="../Wal.Domain/Wal.Domain.csproj" />
+  <Project Path="../Wal.Data/Wal.Data.csproj" />
+  <Project Path="../Wal.ExternalApis/Wal.ExternalApis.csproj" />
+  <Project Path="../Wal.Services/Wal.Services.csproj" />
+  <Project Path="../Wal.Jobs/Wal.Jobs.csproj" />
+  <Project Path="../Wal.Tests/Wal.Tests.csproj" />
+  <Project Path="GerenciadorDeCarteira/WalletManager.csproj" />
+</Solution>

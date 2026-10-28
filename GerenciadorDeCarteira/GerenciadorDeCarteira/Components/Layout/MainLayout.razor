@@ -1,0 +1,147 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject PreferenciasExibicao Preferencias
+@inject NotificacoesCarteira Notificacoes
+@inject IServiceScopeFactory ScopeFactory
+
+<MudThemeProvider Theme="TemaWal.Tema" IsDarkMode="Preferencias.TemaEscuro" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="0" Class="wal-appbar" WrapContent="true">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Class="wal-menu-toggle" aria-label="Abrir menu"
+                       OnClick="() => menuAberto = !menuAberto" />
+        <h1 class="wal-titulo"><SectionOutlet SectionName="@TituloPagina.Secao" /></h1>
+
+        @if (cabecalho is not null)
+        {
+            <div class="wal-strip">
+                <div class="wal-kv">
+                    <span class="wal-k">Patrimônio</span>
+                    <span class="wal-v">@Moeda(cabecalho.Patrimonio)</span>
+                </div>
+                <div class="wal-kv">
+                    <span class="wal-k">Resultado@(cabecalho.DataPrimeiraMovimentacao is DateOnly inicio ? $" desde {inicio:dd/MM/yyyy}" : "")</span>
+                    <span class="wal-v">
+                        @Moeda(cabecalho.Resultado)
+                        @if (cabecalho.ResultadoPercentual is decimal pct)
+                        {
+                            <span class="wal-pill @ClassePill(pct)">@Formatacao.Percentual(pct)</span>
+                        }
+                    </span>
+                </div>
+                @if (cabecalho.VariacaoDiaReais is decimal dia)
+                {
+                    <div class="wal-kv">
+                        <span class="wal-k">Hoje</span>
+                        <span class="wal-v @Formatacao.CorGanhoPerda(dia)">
+                            @(Preferencias.Mascarar ? ValorOculto : Formatacao.MoedaComSinal(dia))
+                            @if (cabecalho.VariacaoDiaPercentual is decimal diaPct)
+                            {
+                                <span class="wal-pill @ClassePill(diaPct)">@Formatacao.Percentual(diaPct)</span>
+                            }
+                        </span>
+                    </div>
+                }
+            </div>
+        }
+
+        <MudSpacer />
+
+        <div class="wal-tools">
+            @if (cabecalho?.DataUltimaCotacao is DateOnly ultima)
+            {
+                <span class="wal-sync">
+                    <span class="wal-dot @(CotacoesEmDia(ultima) ? "" : "wal-dot-old")" aria-hidden="true"></span>
+                    Cotações de @ultima.ToString("dd/MM/yyyy")
+                </span>
+            }
+            <MudTooltip Text="@(Preferencias.OcultarValores ? "Mostrar valores" : "Ocultar valores")">
+                <MudIconButton Icon="@(Preferencias.OcultarValores ? Icons.Material.Outlined.VisibilityOff : Icons.Material.Outlined.Visibility)"
+                               aria-label="@(Preferencias.OcultarValores ? "Mostrar valores" : "Ocultar valores")"
+                               aria-pressed="@(Preferencias.OcultarValores ? "true" : "false")"
+                               Disabled="!Preferencias.Carregada"
+                               OnClick="Preferencias.AlternarOcultarValoresAsync" />
+            </MudTooltip>
+            <MudTooltip Text="@(Preferencias.TemaEscuro ? "Tema claro" : "Tema escuro")">
+                <MudIconButton Icon="@(Preferencias.TemaEscuro ? Icons.Material.Outlined.LightMode : Icons.Material.Outlined.DarkMode)"
+                               aria-label="@(Preferencias.TemaEscuro ? "Usar tema claro" : "Usar tema escuro")"
+                               Disabled="!Preferencias.Carregada"
+                               OnClick="Preferencias.AlternarTemaAsync" />
+            </MudTooltip>
+            <MudButton Href="transacoes" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false"
+                       StartIcon="@Icons.Material.Filled.Add">Transação</MudButton>
+        </div>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="menuAberto" Variant="DrawerVariant.Responsive" Breakpoint="Breakpoint.Md"
+               ClipMode="DrawerClipMode.Never" Elevation="0" Class="wal-drawer">
+        <div class="wal-brand">
+            <span class="wal-logo" aria-hidden="true">GC</span>
+            <span>Gerenciador de Carteira</span>
+        </div>
+        <NavMenu />
+    </MudDrawer>
+
+    <MudMainContent>
+        <div class="wal-conteudo">
+            @Body
+        </div>
+    </MudMainContent>
+</MudLayout>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Ocorreu um erro inesperado.
+    <a href="." class="reload">Recarregar</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private const string ValorOculto = "R$ •••••";
+
+    private bool menuAberto = true;
+    private CabecalhoCarteiraResponse? cabecalho;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Preferencias.Mudou += AoMudar;
+        Notificacoes.CarteiraAlterada += AoAlterarCarteira;
+        await CarregarCabecalhoAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Preferencias.CarregarAsync();
+    }
+
+    // Escopo próprio a cada leitura: o layout vive o circuito inteiro e não deve segurar um DbContext
+    private async Task CarregarCabecalhoAsync()
+    {
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        cabecalho = await scope.ServiceProvider.GetRequiredService<ICarteiraService>().ObterCabecalhoAsync();
+    }
+
+    private void AoMudar() => InvokeAsync(StateHasChanged);
+
+    private void AoAlterarCarteira() => InvokeAsync(async () =>
+    {
+        await CarregarCabecalhoAsync();
+        StateHasChanged();
+    });
+
+    private string Moeda(decimal valor) => Preferencias.Mascarar ? ValorOculto : Formatacao.Moeda(valor);
+
+    private static string ClassePill(decimal valor) => valor < 0 ? "wal-pill-dn" : "wal-pill-up";
+
+    // Até 4 dias corridos cobre fim de semana e um feriado; além disso a sincronização provavelmente falhou
+    private static bool CotacoesEmDia(DateOnly ultima) =>
+        DateOnly.FromDateTime(DateTime.Today).DayNumber - ultima.DayNumber <= 4;
+
+    public void Dispose()
+    {
+        Preferencias.Mudou -= AoMudar;
+        Notificacoes.CarteiraAlterada -= AoAlterarCarteira;
+    }
+}

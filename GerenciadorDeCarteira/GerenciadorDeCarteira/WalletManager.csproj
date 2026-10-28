@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>GerenciadorDeCarteira</RootNamespace>
+    <AssemblyName>GerenciadorDeCarteira</AssemblyName>
+    <UserSecretsId>3c069fff-38d9-400a-9d10-aaf4c084b241</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Hangfire.AspNetCore" Version="1.8.23" />
+    <PackageReference Include="Hangfire.Storage.SQLite" Version="0.4.3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="MudBlazor" Version="9.11.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Wal.Services\Wal.Services.csproj" />
+    <ProjectReference Include="..\..\Wal.Data\Wal.Data.csproj" />
+    <ProjectReference Include="..\..\Wal.Jobs\Wal.Jobs.csproj" />
+  </ItemGroup>
+
+</Project>

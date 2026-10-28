@@ -1,0 +1,7 @@
+<Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+    <Found Context="routeData">
+        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+        @* O título de cada página fica na barra superior (h1) *@
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>

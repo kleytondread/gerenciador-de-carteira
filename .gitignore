@@ -1,0 +1,52 @@
+# ── Dados pessoais e bancos: nunca versionar ─────────────────────────────
+# Banco SQLite da aplicação, backups e arquivos de journal/WAL
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Planilhas e extratos (transações, proventos, relatórios de corretora/Gorila)
+*.xlsx
+*.xls
+*.csv
+*.ods
+
+# Arquivos baixados pela aplicação (preços do Tesouro Direto)
+**/Dados/
+
+# ── Chaves e configurações locais ────────────────────────────────────────
+# Token da Brapi e afins: use user secrets (dotnet user-secrets) ou estes arquivos locais
+appsettings.*.local.json
+appsettings.Local.json
+secrets.json
+*.env
+.env*
+*.pfx
+*.key
+
+# Preferências locais de ferramentas
+.claude/settings.local.json
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userprefs
+
+# ── Saída de build e testes ──────────────────────────────────────────────
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+TestResults/
+*.trx
+coverage*.xml
+*.coverage
+artifacts/
+
+# Sistema operacional
+Thumbs.db
+desktop.ini
+.DS_Store

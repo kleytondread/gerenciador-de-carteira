@@ -1,0 +1,9 @@
+<MudNavMenu Class="wal-nav" aria-label="Menu principal">
+    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Dashboard">Dashboard</MudNavLink>
+    @* Prefix: o detalhe do ativo (/posicoes/{id}) também acende Posições *@
+    <MudNavLink Href="posicoes" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Outlined.FormatListBulleted">Posições</MudNavLink>
+    <MudNavLink Href="eventos" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Outlined.Paid">Eventos</MudNavLink>
+    <MudNavLink Href="transacoes" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Outlined.SwapVert">Transações</MudNavLink>
+    <MudDivider Class="my-2" />
+    <MudNavLink Href="ativos" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.TrackChanges">Ativos rastreados</MudNavLink>
+</MudNavMenu>

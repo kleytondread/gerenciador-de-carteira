@@ -1,0 +1,419 @@
+@page "/transacoes"
+@page "/movimentacoes"
+@using System.ComponentModel.DataAnnotations
+@using Wal.Services.Common
+@* DbContext próprio por página — ver comentário em Home.razor *@
+@inherits OwningComponentBase
+@inject IJSRuntime JsRuntime
+@inject NotificacoesCarteira Notificacoes
+
+<PageTitle>Transações - Gestor de Carteira B3</PageTitle>
+<SectionContent SectionName="@TituloPagina.Secao">Transações</SectionContent>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Nova movimentação</h5>
+
+        @if (ativosDisponiveis.Count == 0)
+        {
+            <p class="text-muted mb-0">
+                Nenhum ativo ativo cadastrado ainda. <a href="ativos">Cadastre um ativo</a> antes de lançar movimentações.
+            </p>
+        }
+        else
+        {
+            <EditForm Model="movModel" OnValidSubmit="RegistrarAsync">
+                <DataAnnotationsValidator />
+                <div class="row g-2 align-items-end">
+                    <div class="col-auto">
+                        <label class="form-label mb-0">Ativo</label>
+                        <InputSelect @bind-Value="movModel.AtivoId" @bind-Value:after="AtualizarPosicaoAtualAsync" class="form-select">
+                            <option value="">Selecione...</option>
+                            @foreach (var a in ativosDisponiveis)
+                            {
+                                <option value="@a.Id">@a.Ticker — @a.Nome</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label mb-0">Tipo</label>
+                        <InputSelect @bind-Value="movModel.Tipo" @bind-Value:after="AtualizarPosicaoAtualAsync" class="form-select">
+                            <option value="@TipoMovimentacao.Compra">Compra</option>
+                            <option value="@TipoMovimentacao.Venda">Venda</option>
+                        </InputSelect>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label mb-0">Data</label>
+                        <InputDate @bind-Value="movModel.Data" @bind-Value:after="AtualizarPosicaoAtualAsync"
+                                   class="form-control" max="@Hoje.ToString("yyyy-MM-dd")" />
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label mb-0">Quantidade</label>
+                        <InputNumber @bind-Value="movModel.Quantidade" class="form-control" style="width:120px" step="any" />
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label mb-0">Preço unitário</label>
+                        <InputNumber @bind-Value="movModel.PrecoUnitario" class="form-control" style="width:120px" step="any" />
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label mb-0">Taxas</label>
+                        <InputNumber @bind-Value="movModel.Taxas" class="form-control" style="width:100px" step="any" />
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-primary" disabled="@salvando">
+                            @if (salvando)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                            }
+                            Registrar
+                        </button>
+                    </div>
+                </div>
+
+                @if (movModel.Tipo == TipoMovimentacao.Venda && movModel.AtivoId.HasValue)
+                {
+                    <div class="mt-2">
+                        @if (carregandoPosicao)
+                        {
+                            <small class="text-muted">Consultando posição...</small>
+                        }
+                        else if (posicaoAtual is not null)
+                        {
+                            <small class="text-muted">
+                                Disponível para venda em @movModel.Data.ToString("dd/MM/yyyy"):
+                                <strong>@Formatacao.Quantidade(posicaoAtual.Quantidade)</strong>
+                                (preço médio @Formatacao.Preco(posicaoAtual.PrecoMedio))
+                            </small>
+                        }
+                    </div>
+                }
+
+                <ValidationSummary class="text-danger mt-2 mb-0" />
+            </EditForm>
+
+            @if (erroForm is not null)
+            {
+                <div class="alert alert-danger mt-3 mb-0">@erroForm</div>
+            }
+            @if (mensagemForm is not null)
+            {
+                <div class="alert alert-success mt-3 mb-0">@mensagemForm</div>
+            }
+        }
+    </div>
+</div>
+
+@if (AtivoIdFiltro.HasValue)
+{
+    <div class="alert alert-info d-flex justify-content-between align-items-center">
+        <span>Mostrando apenas movimentações de <strong>@(tickerFiltro ?? "ativo selecionado")</strong>.</span>
+        <a class="btn btn-sm btn-outline-secondary" href="movimentacoes">Limpar filtro</a>
+    </div>
+}
+
+@if (erroLista is not null)
+{
+    <div class="alert alert-danger">@erroLista</div>
+}
+
+@if (carregandoLista)
+{
+    <p class="text-muted">Carregando...</p>
+}
+else if (movimentacoes.Count == 0)
+{
+    <p class="text-muted">Nenhuma movimentação registrada.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Ativo</th>
+                    <th>Tipo</th>
+                    <th>Data</th>
+                    <th class="text-end">Quantidade</th>
+                    <th class="text-end">Preço unitário</th>
+                    <th class="text-end">Taxas</th>
+                    <th class="text-end">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var m in movimentacoes)
+                {
+                    <tr>
+                        @if (edicaoId == m.Id)
+                        {
+                            <td class="fw-semibold">@m.AtivoTicker</td>
+                            <td>
+                                <select class="form-select form-select-sm" @bind="tipoEdicao">
+                                    <option value="@TipoMovimentacao.Compra">Compra</option>
+                                    <option value="@TipoMovimentacao.Venda">Venda</option>
+                                </select>
+                            </td>
+                            <td><input type="date" class="form-control form-control-sm" @bind="dataEdicao" max="@Hoje.ToString("yyyy-MM-dd")" /></td>
+                            <td><input type="number" step="any" class="form-control form-control-sm text-end" @bind="quantidadeEdicao" /></td>
+                            <td><input type="number" step="any" class="form-control form-control-sm text-end" @bind="precoEdicao" /></td>
+                            <td><input type="number" step="any" class="form-control form-control-sm text-end" @bind="taxasEdicao" /></td>
+                            <td class="text-end text-nowrap">
+                                <button class="btn btn-sm btn-success me-1" @onclick="() => SalvarEdicaoAsync(m.Id)" disabled="@salvandoEdicao">Salvar</button>
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="CancelarEdicao">Cancelar</button>
+                            </td>
+                        }
+                        else
+                        {
+                            <td class="fw-semibold"><a href="posicoes/@m.AtivoId">@m.AtivoTicker</a></td>
+                            <td>
+                                <span class="badge @(m.Tipo == TipoMovimentacao.Compra ? "bg-success" : "bg-danger")">@m.Tipo</span>
+                            </td>
+                            <td>@m.Data.ToString("dd/MM/yyyy")</td>
+                            <td class="text-end">@Formatacao.Quantidade(m.Quantidade)</td>
+                            <td class="text-end">@Formatacao.Preco(m.PrecoUnitario)</td>
+                            <td class="text-end">@Formatacao.Moeda(m.Taxas)</td>
+                            <td class="text-end text-nowrap">
+                                <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => IniciarEdicao(m)">Editar</button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => ExcluirAsync(m)">Excluir</button>
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "ativoId")]
+    public int? AtivoIdFiltro { get; set; }
+
+    private IMovimentacaoService MovimentacaoService => ScopedServices.GetRequiredService<IMovimentacaoService>();
+    private IAtivoService AtivoService => ScopedServices.GetRequiredService<IAtivoService>();
+    private IPosicaoService PosicaoService => ScopedServices.GetRequiredService<IPosicaoService>();
+
+    private static DateOnly Hoje => DateOnly.FromDateTime(DateTime.Today);
+
+    // Serializa os acessos ao banco disparados por eventos que podem se sobrepor
+    // (ex: trocar ativo/tipo/data em sequência rápida) — o DbContext não aceita operações simultâneas.
+    private readonly SemaphoreSlim dbLock = new(1, 1);
+
+    private List<AtivoResponse> ativosDisponiveis = [];
+    private List<MovimentacaoResponse> movimentacoes = [];
+    private bool carregandoLista = true;
+    private string? erroLista;
+
+    // Filtro já carregado: a página continua a mesma instância ao ir de "?ativoId=X" para sem filtro
+    // (link "Limpar filtro" ou menu), então a lista precisa ser recarregada em OnParametersSetAsync.
+    private bool listaCarregada;
+    private int? filtroCarregado;
+    private string? tickerFiltro;
+
+    private MovimentacaoModel movModel = new();
+    private bool salvando;
+    private string? erroForm;
+    private string? mensagemForm;
+
+    private PosicaoCalculada? posicaoAtual;
+    private bool carregandoPosicao;
+
+    private int? edicaoId;
+    private TipoMovimentacao tipoEdicao;
+    private DateTime dataEdicao;
+    private decimal quantidadeEdicao;
+    private decimal precoEdicao;
+    private decimal taxasEdicao;
+    private bool salvandoEdicao;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ativosDisponiveis = await AtivoService.ListarAsync(incluirInativos: false);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (listaCarregada && filtroCarregado == AtivoIdFiltro) return;
+
+        listaCarregada = true;
+        filtroCarregado = AtivoIdFiltro;
+        edicaoId = null;
+
+        tickerFiltro = AtivoIdFiltro is int id
+            ? (await AtivoService.ObterPorIdAsync(id)).Valor?.Ticker
+            : null;
+
+        // Vindo do detalhe de um ativo, já deixa esse ativo selecionado no formulário
+        if (AtivoIdFiltro is int idFiltro && ativosDisponiveis.Any(a => a.Id == idFiltro) && movModel.AtivoId is null)
+            movModel.AtivoId = idFiltro;
+
+        await CarregarListaAsync();
+    }
+
+    private async Task CarregarListaAsync()
+    {
+        await dbLock.WaitAsync();
+        carregandoLista = true;
+        erroLista = null;
+        try
+        {
+            movimentacoes = await MovimentacaoService.ListarAsync(AtivoIdFiltro);
+        }
+        finally
+        {
+            carregandoLista = false;
+            dbLock.Release();
+        }
+    }
+
+    private async Task AtualizarPosicaoAtualAsync()
+    {
+        posicaoAtual = null;
+        if (movModel.Tipo != TipoMovimentacao.Venda || movModel.AtivoId is not int ativoId) return;
+
+        carregandoPosicao = true;
+        await dbLock.WaitAsync();
+        try
+        {
+            // Mesma regra do backend: posição disponível NA DATA da venda, não a de hoje
+            posicaoAtual = await PosicaoService.CalcularPosicaoAsync(ativoId, movModel.Data);
+        }
+        finally
+        {
+            carregandoPosicao = false;
+            dbLock.Release();
+        }
+    }
+
+    private async Task RegistrarAsync()
+    {
+        if (movModel.AtivoId is not int ativoId)
+        {
+            erroForm = "Selecione um ativo.";
+            return;
+        }
+
+        salvando = true;
+        erroForm = null;
+        mensagemForm = null;
+        try
+        {
+            var request = new CriarMovimentacaoRequest(
+                ativoId, movModel.Tipo, movModel.Data, movModel.Quantidade, movModel.PrecoUnitario, movModel.Taxas);
+
+            ResultadoOperacao<MovimentacaoResponse> resultado;
+            await dbLock.WaitAsync();
+            try { resultado = await MovimentacaoService.CriarAsync(request); }
+            finally { dbLock.Release(); }
+
+            if (resultado.Sucesso)
+            {
+                mensagemForm = "Movimentação registrada.";
+                Notificacoes.NotificarAlteracao();
+                // Mantém o ativo e o tipo selecionados para facilitar lançamentos em sequência
+                movModel = new MovimentacaoModel { AtivoId = movModel.AtivoId, Tipo = movModel.Tipo };
+                await CarregarListaAsync();
+                await AtualizarPosicaoAtualAsync();
+            }
+            else
+            {
+                erroForm = resultado.Erro;
+            }
+        }
+        finally
+        {
+            salvando = false;
+        }
+    }
+
+    private void IniciarEdicao(MovimentacaoResponse m)
+    {
+        erroLista = null;
+        edicaoId = m.Id;
+        tipoEdicao = m.Tipo;
+        dataEdicao = m.Data.ToDateTime(TimeOnly.MinValue);
+        quantidadeEdicao = m.Quantidade;
+        precoEdicao = m.PrecoUnitario;
+        taxasEdicao = m.Taxas;
+    }
+
+    private void CancelarEdicao()
+    {
+        edicaoId = null;
+        erroLista = null;
+    }
+
+    private async Task SalvarEdicaoAsync(int id)
+    {
+        salvandoEdicao = true;
+        erroLista = null;
+        try
+        {
+            var request = new EditarMovimentacaoRequest(
+                tipoEdicao, DateOnly.FromDateTime(dataEdicao), quantidadeEdicao, precoEdicao, taxasEdicao);
+
+            ResultadoOperacao<MovimentacaoResponse> resultado;
+            await dbLock.WaitAsync();
+            try { resultado = await MovimentacaoService.EditarAsync(id, request); }
+            finally { dbLock.Release(); }
+
+            if (resultado.Sucesso)
+            {
+                edicaoId = null;
+                Notificacoes.NotificarAlteracao();
+                await CarregarListaAsync();
+                await AtualizarPosicaoAtualAsync();
+            }
+            else
+            {
+                erroLista = resultado.Erro;
+            }
+        }
+        finally
+        {
+            salvandoEdicao = false;
+        }
+    }
+
+    private async Task ExcluirAsync(MovimentacaoResponse m)
+    {
+        var confirmado = await JsRuntime.InvokeAsync<bool>(
+            "confirm", $"Excluir a movimentação de {m.Tipo} de {m.AtivoTicker} em {m.Data:dd/MM/yyyy}?");
+        if (!confirmado) return;
+
+        erroLista = null;
+        ResultadoOperacao resultado;
+        await dbLock.WaitAsync();
+        try { resultado = await MovimentacaoService.ExcluirAsync(m.Id); }
+        finally { dbLock.Release(); }
+
+        if (resultado.Sucesso)
+        {
+            if (edicaoId == m.Id) edicaoId = null;
+            Notificacoes.NotificarAlteracao();
+            await CarregarListaAsync();
+            await AtualizarPosicaoAtualAsync();
+        }
+        else
+        {
+            erroLista = resultado.Erro;
+        }
+    }
+
+    private class MovimentacaoModel
+    {
+        [Required(ErrorMessage = "Selecione um ativo.")]
+        public int? AtivoId { get; set; }
+
+        public TipoMovimentacao Tipo { get; set; } = TipoMovimentacao.Compra;
+
+        public DateOnly Data { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+
+        [Range(0.0001, double.MaxValue, ErrorMessage = "Quantidade deve ser maior que zero.")]
+        public decimal Quantidade { get; set; }
+
+        [Range(0.0001, double.MaxValue, ErrorMessage = "Preço unitário deve ser maior que zero.")]
+        public decimal PrecoUnitario { get; set; }
+
+        [Range(0, double.MaxValue, ErrorMessage = "Taxas não pode ser negativo.")]
+        public decimal Taxas { get; set; }
+    }
+}

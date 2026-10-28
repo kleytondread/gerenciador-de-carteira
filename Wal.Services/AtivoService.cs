@@ -1,0 +1,242 @@
+using System.Text.RegularExpressions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Wal.Data;
+using Wal.Domain.Entities;
+using Wal.Domain.Enums;
+using Wal.Services.Common;
+using Wal.Services.Dtos;
+using Wal.Services.TesouroDireto;
+
+namespace Wal.Services;
+
+public partial class AtivoService(
+    AppDbContext db,
+    IAtivoJobScheduler jobScheduler,
+    ITesouroDiretoService tesouroDireto,
+    ILogger<AtivoService> logger) : IAtivoService
+{
+    // Formato B3: raiz de 4 caracteres (começa com letra; os demais podem ser letra ou dígito)
+    // + 1 ou 2 dígitos. Ex: PETR4, HGLG11 e ETFs com dígito na raiz, como B5P211 (raiz B5P2 + 11).
+    // Manter igual ao [RegularExpression] do formulário em Components/Pages/Ativos.razor.
+    [GeneratedRegex(@"^[A-Z][A-Z0-9]{3}\d{1,2}$")]
+    private static partial Regex TickerRegex();
+
+    public async Task<ResultadoOperacao<AtivoResponse>> CriarAsync(CriarAtivoRequest request)
+    {
+        if (request.Tipo == TipoAtivo.Tesouro)
+            return await CriarTesouroAsync(request);
+
+        var ticker = (request.Ticker ?? string.Empty).Trim().ToUpperInvariant();
+
+        if (!TickerRegex().IsMatch(ticker))
+            return ResultadoOperacao<AtivoResponse>.Falha(
+                $"Ticker '{request.Ticker}' não segue o formato B3 esperado (4 caracteres iniciando por letra + 1 ou 2 dígitos, ex: PETR4, HGLG11, B5P211).",
+                TipoErroOperacao.Validacao);
+
+        var erroCampos = ValidarNomeETipo(request.Nome, request.Tipo);
+        if (erroCampos is not null)
+            return ResultadoOperacao<AtivoResponse>.Falha(erroCampos, TipoErroOperacao.Validacao);
+
+        var jaExiste = await db.Ativos.AnyAsync(a => a.Ticker == ticker);
+        if (jaExiste)
+            return ResultadoOperacao<AtivoResponse>.Falha(
+                $"Já existe um ativo cadastrado com o ticker '{ticker}'.", TipoErroOperacao.Conflito);
+
+        var ativo = new Ativo
+        {
+            Ticker = ticker,
+            Nome = request.Nome.Trim(),
+            Tipo = request.Tipo,
+            EstaAtivo = true,
+            DataCadastro = DateTime.UtcNow
+        };
+
+        return await SalvarNovoAsync(ativo);
+    }
+
+    // Título do Tesouro: não tem ticker da B3. Ticker e nome vêm do catálogo do arquivo do Tesouro
+    // (ex.: "IPCA+ 2045" / "Tesouro IPCA+ 2045"), o que também garante que existe preço para ele.
+    private async Task<ResultadoOperacao<AtivoResponse>> CriarTesouroAsync(CriarAtivoRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.TituloTesouro) || request.VencimentoTesouro is null)
+            return ResultadoOperacao<AtivoResponse>.Falha("Selecione o título do Tesouro.", TipoErroOperacao.Validacao);
+
+        var titulos = await tesouroDireto.ListarTitulosAsync();
+        if (titulos.Count == 0)
+            return ResultadoOperacao<AtivoResponse>.Falha(
+                "A lista de títulos do Tesouro está indisponível agora (o arquivo de preços não pôde ser baixado). Tente mais tarde.",
+                TipoErroOperacao.Validacao);
+
+        var titulo = titulos.FirstOrDefault(t =>
+            t.Vencimento == request.VencimentoTesouro && TitulosTesouro.MesmoTipo(t.TipoTitulo, request.TituloTesouro));
+        if (titulo is null)
+            return ResultadoOperacao<AtivoResponse>.Falha(
+                $"Título '{request.TituloTesouro}' com vencimento {request.VencimentoTesouro:dd/MM/yyyy} não está entre os títulos em oferta no Tesouro Direto.",
+                TipoErroOperacao.Validacao);
+
+        if (await db.Ativos.AnyAsync(a => a.Ticker == titulo.Ticker))
+            return ResultadoOperacao<AtivoResponse>.Falha(
+                $"Já existe um ativo cadastrado para o {titulo.Nome}.", TipoErroOperacao.Conflito);
+
+        return await SalvarNovoAsync(new Ativo
+        {
+            Ticker = titulo.Ticker,
+            Nome = titulo.Nome,
+            Tipo = TipoAtivo.Tesouro,
+            TituloTesouro = titulo.TipoTitulo,
+            VencimentoTesouro = titulo.Vencimento,
+            EstaAtivo = true,
+            DataCadastro = DateTime.UtcNow
+        });
+    }
+
+    private async Task<ResultadoOperacao<AtivoResponse>> SalvarNovoAsync(Ativo ativo)
+    {
+        db.Ativos.Add(ativo);
+        await db.SaveChangesAsync();
+
+        // Fire-and-forget: a criação do Ativo não aguarda a carga histórica terminar (spec, seção 4.1/4.3).
+        jobScheduler.EnfileirarCargaHistoricaInicial(ativo.Id);
+
+        logger.LogInformation("Ativo cadastrado: {Ticker} (Id {AtivoId}); carga histórica inicial enfileirada.",
+            ativo.Ticker, ativo.Id);
+
+        return ResultadoOperacao<AtivoResponse>.Ok(ParaResponse(ativo));
+    }
+
+    public async Task<ResultadoOperacao<AtivoResponse>> ObterPorIdAsync(int id)
+    {
+        var ativo = await db.Ativos.FindAsync(id);
+        return ativo is null
+            ? ResultadoOperacao<AtivoResponse>.Falha("Ativo não encontrado.", TipoErroOperacao.NaoEncontrado)
+            : ResultadoOperacao<AtivoResponse>.Ok(ParaResponse(ativo));
+    }
+
+    public async Task<List<AtivoResponse>> ListarAsync(string? busca = null, bool incluirInativos = true)
+    {
+        var query = db.Ativos.AsNoTracking().AsQueryable();
+
+        if (!incluirInativos)
+            query = query.Where(a => a.EstaAtivo);
+
+        if (!string.IsNullOrWhiteSpace(busca))
+        {
+            // No provider SQLite do EF Core, string.Contains() é traduzido para instr() (case-sensitive).
+            // EF.Functions.Like usa o LIKE nativo do SQLite, que é case-insensitive para ASCII por padrão.
+            var termo = $"%{busca.Trim()}%";
+            query = query.Where(a => EF.Functions.Like(a.Ticker, termo) || EF.Functions.Like(a.Nome, termo));
+        }
+
+        return await query
+            .OrderBy(a => a.Ticker)
+            .Select(a => new AtivoResponse(a.Id, a.Ticker, a.Nome, a.Tipo, a.EstaAtivo, a.DataCadastro))
+            .ToListAsync();
+    }
+
+    public async Task<ResultadoOperacao<AtivoResponse>> EditarAsync(int id, EditarAtivoRequest request)
+    {
+        var ativo = await db.Ativos.FindAsync(id);
+        if (ativo is null)
+            return ResultadoOperacao<AtivoResponse>.Falha("Ativo não encontrado.", TipoErroOperacao.NaoEncontrado);
+
+        var erroCampos = ValidarNomeETipo(request.Nome, request.Tipo);
+        if (erroCampos is not null)
+            return ResultadoOperacao<AtivoResponse>.Falha(erroCampos, TipoErroOperacao.Validacao);
+
+        // Título do Tesouro e ativo da B3 têm origem de cotação diferente: trocar entre eles quebraria a sincronização
+        if ((ativo.Tipo == TipoAtivo.Tesouro) != (request.Tipo == TipoAtivo.Tesouro))
+            return ResultadoOperacao<AtivoResponse>.Falha(
+                "Não é possível trocar um título do Tesouro para outro tipo (nem o contrário). Desative e cadastre de novo.",
+                TipoErroOperacao.Validacao);
+
+        // Ticker não é editável — o DTO de edição nem o expõe (decisão da Tarefa 2.3).
+        ativo.Nome = request.Nome.Trim();
+        ativo.Tipo = request.Tipo;
+        await db.SaveChangesAsync();
+
+        return ResultadoOperacao<AtivoResponse>.Ok(ParaResponse(ativo));
+    }
+
+    public async Task<ResultadoOperacao> ExcluirAsync(int id)
+    {
+        var ativo = await db.Ativos.FindAsync(id);
+        if (ativo is null)
+            return ResultadoOperacao.Falha("Ativo não encontrado.", TipoErroOperacao.NaoEncontrado);
+
+        var possuiMovimentacoes = await db.Movimentacoes.AnyAsync(m => m.AtivoId == id);
+        if (possuiMovimentacoes)
+            return ResultadoOperacao.Falha(
+                "Ativo possui movimentações associadas; não pode ser excluído. Desative-o em vez disso.",
+                TipoErroOperacao.Conflito);
+
+        ativo.EstaAtivo = false;
+        await db.SaveChangesAsync();
+
+        logger.LogInformation("Ativo desativado (soft delete): {Ticker} (Id {AtivoId}).", ativo.Ticker, ativo.Id);
+
+        return ResultadoOperacao.Ok();
+    }
+
+    public async Task<ResultadoOperacao> ReativarAsync(int id)
+    {
+        var ativo = await db.Ativos.FindAsync(id);
+        if (ativo is null)
+            return ResultadoOperacao.Falha("Ativo não encontrado.", TipoErroOperacao.NaoEncontrado);
+
+        if (!ativo.EstaAtivo)
+        {
+            ativo.EstaAtivo = true;
+            await db.SaveChangesAsync();
+            logger.LogInformation("Ativo reativado: {Ticker} (Id {AtivoId}).", ativo.Ticker, ativo.Id);
+        }
+
+        return ResultadoOperacao.Ok();
+    }
+
+    public async Task<ResultadoOperacao<List<CotacaoResponse>>> ObterCotacoesAsync(int ativoId, string? periodo)
+    {
+        var ativoExiste = await db.Ativos.AnyAsync(a => a.Id == ativoId);
+        if (!ativoExiste)
+            return ResultadoOperacao<List<CotacaoResponse>>.Falha("Ativo não encontrado.", TipoErroOperacao.NaoEncontrado);
+
+        var query = db.CotacoesHistoricas.AsNoTracking().Where(c => c.AtivoId == ativoId);
+
+        var ultimaData = await query.OrderByDescending(c => c.Data).Select(c => (DateOnly?)c.Data).FirstOrDefaultAsync();
+        if (ultimaData is null)
+            return ResultadoOperacao<List<CotacaoResponse>>.Ok([]);
+
+        // "Início" e período inválido/ausente trazem o histórico inteiro (sem filtro de data) — Tarefa 6.4
+        DateOnly? dataCorte = periodo?.Trim().ToUpperInvariant() switch
+        {
+            "1M" => ultimaData.Value.AddDays(-30),
+            "6M" => ultimaData.Value.AddMonths(-6),
+            "1A" => ultimaData.Value.AddYears(-1),
+            "YTD" => new DateOnly(ultimaData.Value.Year, 1, 1),
+            "24M" => ultimaData.Value.AddMonths(-24),
+            _ => null
+        };
+
+        if (dataCorte.HasValue)
+            query = query.Where(c => c.Data >= dataCorte.Value);
+
+        var cotacoes = await query
+            .OrderBy(c => c.Data)
+            .Select(c => new CotacaoResponse(c.Data, c.Abertura, c.Maxima, c.Minima, c.Fechamento, c.Volume))
+            .ToListAsync();
+
+        return ResultadoOperacao<List<CotacaoResponse>>.Ok(cotacoes);
+    }
+
+    private static string? ValidarNomeETipo(string? nome, Domain.Enums.TipoAtivo tipo)
+    {
+        if (string.IsNullOrWhiteSpace(nome))
+            return "Informe o nome do ativo.";
+        if (!Enum.IsDefined(tipo))
+            return "Tipo de ativo inválido (use Ação, ETF, FII ou Tesouro).";
+        return null;
+    }
+
+    private static AtivoResponse ParaResponse(Ativo ativo) =>
+        new(ativo.Id, ativo.Ticker, ativo.Nome, ativo.Tipo, ativo.EstaAtivo, ativo.DataCadastro);
+}

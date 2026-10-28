@@ -1,23 +1,13 @@
 using System.Net;
-using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Wal.ExternalApis;
+using Wal.Tests.TestHelpers;
+using static Wal.Tests.TestHelpers.HandlerFalso;
 
 namespace Wal.Tests.ExternalApis;
 
 public class BancoCentralClientTests
 {
-    private sealed class HandlerFalso(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
-    {
-        public List<Uri> Requisicoes { get; } = [];
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            Requisicoes.Add(request.RequestUri!);
-            return Task.FromResult(responder(request));
-        }
-    }
-
     private static (BancoCentralClient Cliente, HandlerFalso Handler) Criar(Func<HttpRequestMessage, HttpResponseMessage> responder)
     {
         var handler = new HandlerFalso(responder);
@@ -25,9 +15,6 @@ public class BancoCentralClientTests
         var cliente = new BancoCentralClient(http, NullLogger<BancoCentralClient>.Instance) { EsperaEntreTentativas = TimeSpan.Zero };
         return (cliente, handler);
     }
-
-    private static HttpResponseMessage Json(string json) =>
-        new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
 
     [Fact]
     public async Task ObterSerieAsync_LeDataBrasileiraEValorComPonto()

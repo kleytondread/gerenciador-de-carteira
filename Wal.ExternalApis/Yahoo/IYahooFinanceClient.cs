@@ -15,4 +15,10 @@ public interface IYahooFinanceClient
     /// (índices como ^BVSP e ^GSPC, ou "DIVO11.SA").
     /// </summary>
     Task<YahooQuoteResult> ObterDadosSimboloAsync(string simbolo, long period1);
+
+    /// <summary>
+    /// Preço do momento de um ticker da B3 (sufixo ".SA" automático) e o fechamento do pregão anterior.
+    /// Nulo quando o Yahoo não devolve preço.
+    /// </summary>
+    Task<YahooCotacaoAtual?> ObterCotacaoAtualAsync(string ticker);
 }

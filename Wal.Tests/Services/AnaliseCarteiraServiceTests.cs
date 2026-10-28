@@ -3,6 +3,7 @@ using Moq;
 using Wal.Domain.Entities;
 using Wal.Domain.Enums;
 using Wal.ExternalApis;
+using Wal.ExternalApis.Dtos;
 using Wal.Services;
 using Wal.Services.Dtos;
 using Wal.Tests.TestHelpers;
@@ -16,11 +17,13 @@ public class AnaliseCarteiraServiceTests : SqliteInMemoryTestBase
     // Janeiro/2026: dia 2 é sexta, 5 é segunda
     private static DateOnly D(int mes, int dia) => new(2026, mes, dia);
 
-    public AnaliseCarteiraServiceTests()
+    public AnaliseCarteiraServiceTests() => sut = Criar(Fixtures.CotacoesAoVivo());
+
+    private AnaliseCarteiraService Criar(ICotacaoAoVivoService cotacoesAoVivo)
     {
         var indices = new IndicesReferenciaService(
             Db, Mock.Of<IBancoCentralClient>(), Mock.Of<IYahooFinanceClient>(), NullLogger<IndicesReferenciaService>.Instance);
-        sut = new AnaliseCarteiraService(Db, new CarteiraService(Db, new PosicaoService(Db)), indices);
+        return new AnaliseCarteiraService(Db, new CarteiraService(Db, new PosicaoService(Db)), indices, cotacoesAoVivo);
     }
 
     private async Task<Ativo> AtivoAsync(string ticker)
@@ -296,6 +299,56 @@ public class AnaliseCarteiraServiceTests : SqliteInMemoryTestBase
         Assert.Equal("WEGE3", Assert.Single(painel.Encerradas).Ticker);
         // Fim da série em 02/03: entram os fechamentos depois de 31/01 (20/02 e 02/03)
         Assert.Equal([11m, 12m], painel.Tendencia30Dias[aberta.Id]);
+    }
+
+    private static YahooCotacaoAtual AoVivo(decimal preco, decimal anterior, DateOnly dia) =>
+        new(preco, anterior, new DateTimeOffset(dia.ToDateTime(new TimeOnly(14, 0)), TimeSpan.FromHours(-3)));
+
+    [Fact]
+    public async Task ObterPainelPosicoesAsync_PrecoAoVivoRecalculaAPosicao()
+    {
+        var itsa = await AtivoAsync("ITSA4");
+        var wege = await AtivoAsync("WEGE3");
+        await MovimentarAsync(itsa, TipoMovimentacao.Compra, D(1, 2), 10, 10);
+        await MovimentarAsync(wege, TipoMovimentacao.Compra, D(1, 2), 10, 20);
+        await CotacoesAsync(itsa, (D(1, 2), 10), (D(3, 2), 12));
+        await CotacoesAsync(wege, (D(1, 2), 20), (D(3, 2), 20));
+        var cotacao = AoVivo(13, 12, D(3, 3));
+
+        var painel = await Criar(Fixtures.CotacoesAoVivo(new() { ["ITSA4"] = cotacao })).ObterPainelPosicoesAsync();
+
+        var p = painel.Abertas.Single(a => a.Ticker == "ITSA4");
+        Assert.Equal(13m, p.Cotacao);
+        Assert.Equal(13m / 12m - 1, p.VariacaoDia);
+        Assert.Equal(130m, p.Valor);
+        Assert.Equal(0.3m, p.Valorizacao);
+        Assert.Equal(130m / 330m, p.Peso);
+        // Motor com o fechamento do banco: 120 − 100 = 20; o preço ao vivo soma 10 × (13 − 12)
+        Assert.Equal(30m, p.ResultadoTotal);
+        Assert.Equal(0.3m, p.ResultadoTotalPercentual);
+        Assert.Equal([12m, 13m], painel.Tendencia30Dias[itsa.Id]);
+        Assert.Equal(cotacao.Horario, painel.CotacoesAoVivoEm);
+        Assert.Equal(20m, painel.Abertas.Single(a => a.Ticker == "WEGE3").Cotacao);
+    }
+
+    [Fact]
+    public async Task ObterPainelPosicoesAsync_IgnoraPrecoAoVivoDoDiaJaGravadoEDoTesouro()
+    {
+        var itsa = await AtivoAsync("ITSA4");
+        var tesouro = Fixtures.NovoAtivo("IPCA2035", "Tesouro IPCA+ 2035", TipoAtivo.Tesouro);
+        Db.Ativos.Add(tesouro);
+        await Db.SaveChangesAsync();
+        await MovimentarAsync(itsa, TipoMovimentacao.Compra, D(1, 2), 10, 10);
+        await MovimentarAsync(tesouro, TipoMovimentacao.Compra, D(1, 2), 1, 3000);
+        await CotacoesAsync(itsa, (D(1, 2), 10), (D(3, 3), 12));
+        await CotacoesAsync(tesouro, (D(1, 2), 3000), (D(3, 2), 3100));
+        var cotacoes = Fixtures.CotacoesAoVivo(new() { ["ITSA4"] = AoVivo(13, 12, D(3, 3)), ["IPCA2035"] = AoVivo(3200, 3100, D(3, 3)) });
+
+        var painel = await Criar(cotacoes).ObterPainelPosicoesAsync();
+
+        Assert.Equal(12m, painel.Abertas.Single(a => a.Ticker == "ITSA4").Cotacao);
+        Assert.Equal(3100m, painel.Abertas.Single(a => a.Ticker == "IPCA2035").Cotacao);
+        Assert.Null(painel.CotacoesAoVivoEm);
     }
 
     [Fact]

@@ -1,11 +1,22 @@
+using Moq;
 using Wal.Domain.Entities;
 using Wal.Domain.Enums;
+using Wal.ExternalApis.Dtos;
+using Wal.Services;
 
 namespace Wal.Tests.TestHelpers;
 
 /// <summary>Fábricas curtas para entidades de domínio usadas repetidamente nos testes.</summary>
 internal static class Fixtures
 {
+    /// <summary>Cotações ao vivo fixas por ticker; sem argumento, nenhuma (a tela usa só o banco).</summary>
+    public static ICotacaoAoVivoService CotacoesAoVivo(Dictionary<string, YahooCotacaoAtual>? cotacoes = null)
+    {
+        var servico = new Mock<ICotacaoAoVivoService>();
+        servico.Setup(s => s.ObterAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(cotacoes ?? []);
+        return servico.Object;
+    }
+
     public static Ativo NovoAtivo(
         string ticker = "PETR4", string nome = "Petrobras PN", TipoAtivo tipo = TipoAtivo.Acao, bool estaAtivo = true) =>
         new() { Ticker = ticker, Nome = nome, Tipo = tipo, EstaAtivo = estaAtivo, DataCadastro = DateTime.UtcNow };

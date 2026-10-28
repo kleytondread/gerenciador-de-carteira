@@ -43,7 +43,7 @@ public class ProventoServiceTests : SqliteInMemoryTestBase
         Db.CotacoesHistoricas.AddRange(Fixtures.NovaCotacao(ativo.Id, D(1, 2), 10), Fixtures.NovaCotacao(ativo.Id, D(6, 30), 10));
         await Db.SaveChangesAsync();
         var indices = new IndicesReferenciaService(Db, Mock.Of<IBancoCentralClient>(), Mock.Of<IYahooFinanceClient>(), NullLogger<IndicesReferenciaService>.Instance);
-        return new AnaliseCarteiraService(Db, new CarteiraService(Db, new PosicaoService(Db)), indices);
+        return new AnaliseCarteiraService(Db, new CarteiraService(Db, new PosicaoService(Db)), indices, Fixtures.CotacoesAoVivo());
     }
 
     [Fact]

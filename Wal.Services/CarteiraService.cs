@@ -26,21 +26,13 @@ public class CarteiraService(AppDbContext db, IPosicaoService posicaoService) : 
                 .Take(2)
                 .ToListAsync();
 
-            decimal? cotacaoAtual = ultimasCotacoes.Count > 0 ? ultimasCotacoes[0].Fechamento : null;
-
-            decimal? variacaoDia = ultimasCotacoes.Count == 2 && ultimasCotacoes[1].Fechamento != 0
-                ? (ultimasCotacoes[0].Fechamento - ultimasCotacoes[1].Fechamento) / ultimasCotacoes[1].Fechamento
-                : null;
-
-            decimal? valorPosicao = cotacaoAtual.HasValue ? posicao.Quantidade * cotacaoAtual.Value : null;
-
-            decimal? rentabilidade = cotacaoAtual.HasValue && posicao.PrecoMedio != 0
-                ? (cotacaoAtual.Value - posicao.PrecoMedio) / posicao.PrecoMedio
-                : null;
-
-            resultado.Add(new PosicaoAtivoResponse(
+            var semCotacao = new PosicaoAtivoResponse(
                 ativo.Id, ativo.Ticker, ativo.Nome, posicao.Quantidade, posicao.PrecoMedio,
-                cotacaoAtual, variacaoDia, valorPosicao, rentabilidade, ativo.Tipo, ativo.Categoria));
+                null, null, null, null, ativo.Tipo, ativo.Categoria, null);
+
+            resultado.Add(ultimasCotacoes.Count > 0
+                ? semCotacao.ComCotacao(ultimasCotacoes[0].Fechamento, ultimasCotacoes.ElementAtOrDefault(1)?.Fechamento, ultimasCotacoes[0].Data)
+                : semCotacao);
         }
 
         return resultado;

@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Wal.Data;
 using Wal.Domain.Enums;
+using Wal.ExternalApis.Dtos;
+using Wal.Services.Common;
 using Wal.Services.Dtos;
 
 namespace Wal.Services;
@@ -8,7 +10,8 @@ namespace Wal.Services;
 public class AnaliseCarteiraService(
     AppDbContext db,
     ICarteiraService carteira,
-    IIndicesReferenciaService indices) : IAnaliseCarteiraService
+    IIndicesReferenciaService indices,
+    ICotacaoAoVivoService cotacoesAoVivo) : IAnaliseCarteiraService
 {
     private const int DiasUteisNoAno = 252;
 
@@ -47,7 +50,8 @@ public class AnaliseCarteiraService(
     {
         var motor = await MotorCarteira.CalcularAsync(db);
         var registradas = await carteira.ObterPosicoesAsync();
-        var abertas = MontarPosicoes(motor, registradas);
+        var aoVivo = await CotacoesAoVivoAsync(registradas);
+        var abertas = MontarPosicoes(motor, registradas, aoVivo);
         var ativos = await db.Ativos.AsNoTracking().ToDictionaryAsync(a => a.Id);
         var encerradas = Encerradas(motor, registradas, ativos);
 
@@ -59,8 +63,22 @@ public class AnaliseCarteiraService(
                 .ToListAsync())
             .GroupBy(c => c.AtivoId)
             .ToDictionary(g => g.Key, g => g.OrderBy(c => c.Data).Select(c => c.Fechamento).ToList());
+        foreach (var (ativoId, cotacao) in aoVivo)
+            tendencia.GetValueOrDefault(ativoId)?.Add(cotacao.Preco);
 
-        return new PainelPosicoesResponse(abertas, encerradas, tendencia);
+        return new PainelPosicoesResponse(abertas, encerradas, tendencia,
+            aoVivo.Count > 0 ? aoVivo.Values.Max(c => c.Horario) : null);
+    }
+
+    // Preço do momento das posições abertas, só quando é de um pregão mais novo que o último fechamento gravado
+    // (depois do job das 20h o banco já tem o dia). Tesouro Direto não tem cotação no Yahoo.
+    private async Task<Dictionary<int, YahooCotacaoAtual>> CotacoesAoVivoAsync(List<PosicaoAtivoResponse> posicoes)
+    {
+        var candidatas = posicoes.Where(p => p.Tipo != TipoAtivo.Tesouro && p.DataCotacao.HasValue).ToList();
+        var cotacoes = await cotacoesAoVivo.ObterAsync(candidatas.Select(p => p.Ticker));
+        return candidatas
+            .Where(p => cotacoes.TryGetValue(p.Ticker, out var c) && Pregao.Dia(c.Horario) > p.DataCotacao)
+            .ToDictionary(p => p.AtivoId, p => cotacoes[p.Ticker]);
     }
 
     public async Task<DetalheAtivoResponse?> ObterDetalheAtivoAsync(int ativoId)
@@ -388,8 +406,14 @@ public class AnaliseCarteiraService(
         return resultado;
     }
 
-    private static List<PosicaoDetalhadaResponse> MontarPosicoes(MotorCarteira motor, List<PosicaoAtivoResponse> posicoes)
+    private static List<PosicaoDetalhadaResponse> MontarPosicoes(
+        MotorCarteira motor, List<PosicaoAtivoResponse> registradas, Dictionary<int, YahooCotacaoAtual>? aoVivo = null)
     {
+        // O preço ao vivo entra antes das contas, então valor, peso, DY e YoC saem dele sem fórmula nova
+        var posicoes = registradas
+            .Select(p => aoVivo?.GetValueOrDefault(p.AtivoId) is { } c ? p.ComCotacao(c.Preco, c.FechamentoAnterior, Pregao.Dia(c.Horario)) : p)
+            .ToList();
+
         var fim = UltimoDia(motor);
         var inicio12Meses = fim.AddMonths(-12);
         var recebidos12Meses = motor.ProventosRecebidos
@@ -402,9 +426,11 @@ public class AnaliseCarteiraService(
         var porAcao12Meses = recebidos12Meses.ToDictionary(kv => kv.Key, kv => kv.Value.Sum(p => p.ValorPorAcao));
         var valorTotal = posicoes.Sum(p => p.ValorPosicao ?? 0);
 
-        return posicoes.Select(p =>
+        return posicoes.Zip(registradas, (p, banco) =>
         {
             var totais = motor.PorAtivo.GetValueOrDefault(p.AtivoId);
+            // O motor calculou o resultado com o fechamento do banco; com preço ao vivo, soma a diferença de valor
+            var resultado = totais?.Resultado + ((p.ValorPosicao - banco.ValorPosicao) ?? 0);
             var custo = p.Quantidade * p.PrecoMedio;
             var prov12 = proventos12Meses.GetValueOrDefault(p.AtivoId);
             var porAcao12 = porAcao12Meses.GetValueOrDefault(p.AtivoId);
@@ -414,8 +440,8 @@ public class AnaliseCarteiraService(
                 p.ValorPosicao is decimal v && valorTotal > 0 ? v / valorTotal : null,
                 p.RentabilidadePercentual,
                 totais?.Proventos ?? 0,
-                totais?.Resultado,
-                totais is { Compras: > 0 } ? totais.Resultado / totais.Compras : null,
+                resultado,
+                totais is { Compras: > 0 } ? resultado / totais.Compras : null,
                 prov12,
                 p.CotacaoAtual is > 0 ? porAcao12 / p.CotacaoAtual : null,
                 p.PrecoMedio > 0 ? porAcao12 / p.PrecoMedio : null,

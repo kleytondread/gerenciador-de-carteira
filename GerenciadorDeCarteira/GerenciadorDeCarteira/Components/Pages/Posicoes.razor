@@ -1,6 +1,8 @@
 @page "/posicoes"
 @inherits PaginaCarteira
 @inject NavigationManager Nav
+@inject TimeProvider Relogio
+@using Wal.Services.Common
 
 <PageTitle>Posições - Gestor de Carteira B3</PageTitle>
 <SectionContent SectionName="@TituloPagina.Secao">Posições</SectionContent>
@@ -21,6 +23,10 @@ else
 {
     <CardPainel Titulo="@(EmCarteira ? "Em carteira" : "Encerradas")" SemEspacamento="true">
         <Acoes>
+            @if (EmCarteira && painel.CotacoesAoVivoEm is DateTimeOffset aoVivoEm)
+            {
+                <MudText Typo="Typo.caption" Class="wal-k" title="Preço do Yahoo Finance, com atraso de cerca de 15 min">Cotações de @Formatacao.Hora(aoVivoEm)</MudText>
+            }
             <MudToggleGroup T="string" @bind-Value="aba" @bind-Value:after="AoTrocarAba" Size="Size.Small" Outlined="true" Delimiters="true"
                             Color="Color.Primary" aria-label="Situação">
                 <MudToggleItem T="string" Value="@AbaAbertas" Text="@($"Em carteira ({painel.Abertas.Count})")" />
@@ -196,6 +202,39 @@ else
 
     protected override async Task CarregarAsync() =>
         painel = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterPainelPosicoesAsync();
+
+    // ── Cotações do momento ──────────────────────────────────────────────
+
+    private readonly CancellationTokenSource fimDaTela = new();
+
+    // Depois do primeiro render, e não no prerender, para o timer viver só na conexão interativa
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) _ = AtualizarDuranteOPregaoAsync();
+    }
+
+    // A carga já traz as cotações ao vivo; durante o pregão a tela recarrega a cada intervalo para buscar as novas
+    private async Task AtualizarDuranteOPregaoAsync()
+    {
+        using var timer = new PeriodicTimer(CotacaoAoVivoService.Intervalo);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(fimDaTela.Token))
+            {
+                if (Pregao.Aberto(Relogio.GetUtcNow())) await InvokeAsync(RecarregarERedesenharAsync);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        await fimDaTela.CancelAsync();
+        fimDaTela.Dispose();
+        await base.DisposeAsyncCore();
+    }
 
     // ── Ordenação ────────────────────────────────────────────────────────
 

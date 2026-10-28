@@ -15,6 +15,9 @@ public class YahooQuoteResult
     public List<YahooSplit> Splits { get; set; } = [];
 }
 
+/// <summary>Preço do momento (com o atraso do Yahoo, ~15 min na B3) e o fechamento do pregão anterior.</summary>
+public record YahooCotacaoAtual(decimal Preco, decimal FechamentoAnterior, DateTimeOffset Horario);
+
 public class YahooSplit
 {
     public long Date { get; set; }          // Data ex do evento (Unix timestamp em segundos)
@@ -87,6 +90,16 @@ internal class YahooMeta
 {
     [JsonPropertyName("symbol")]
     public string Symbol { get; set; } = string.Empty;
+
+    [JsonPropertyName("regularMarketPrice")]
+    public decimal? RegularMarketPrice { get; set; }
+
+    [JsonPropertyName("chartPreviousClose")]
+    public decimal? ChartPreviousClose { get; set; }
+
+    // Unix timestamp em segundos do último negócio
+    [JsonPropertyName("regularMarketTime")]
+    public long? RegularMarketTime { get; set; }
 }
 
 internal class YahooIndicators

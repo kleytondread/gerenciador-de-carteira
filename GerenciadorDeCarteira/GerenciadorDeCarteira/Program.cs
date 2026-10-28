@@ -9,6 +9,7 @@ using Wal.Data;
 using Wal.ExternalApis;
 using Wal.Jobs;
 using Wal.Services;
+using Wal.Services.Common;
 using Wal.Services.TesouroDireto;
 
 
@@ -95,6 +96,11 @@ builder.Services.AddScoped<ICarteiraService, CarteiraService>();
 builder.Services.AddScoped<IAnaliseCarteiraService, AnaliseCarteiraService>();
 builder.Services.AddScoped<IProventoService, ProventoService>();
 
+// Cotação do momento na tela de Posições: só em memória, compartilhada entre as abas abertas
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<ICotacaoAoVivoService, CotacaoAoVivoService>();
+
 // Hangfire.Storage.SQLite não tem storage oficial do Hangfire para SQLite;
 // usa o mesmo arquivo de banco da aplicação (storage roda em tabelas próprias, prefixo Hangfire).
 // Atenção: UseSQLiteStorage espera o caminho puro do arquivo, não uma connection string
@@ -133,21 +139,21 @@ RecurringJob.AddOrUpdate<AtivoSyncJob>(
     "sincronizacao-diaria-ativos",
     job => job.SincronizarTodosAtivosAsync(),
     "0 20 * * *",
-    new RecurringJobOptions { TimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo") });
+    new RecurringJobOptions { TimeZone = Pregao.Fuso });
 
 // A cada 6h; o download em si só acontece quando o arquivo tem pelo menos 5h (TesouroDiretoOptions)
 RecurringJob.AddOrUpdate<TesouroSyncJob>(
     "atualizacao-tesouro-direto",
     job => job.AtualizarAsync(),
     "0 */6 * * *",
-    new RecurringJobOptions { TimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo") });
+    new RecurringJobOptions { TimeZone = Pregao.Fuso });
 
 // Depois da sincronização dos ativos; o Banco Central publica o CDI do dia no fim da tarde
 RecurringJob.AddOrUpdate<IndiceSyncJob>(
     "atualizacao-indices-referencia",
     job => job.SincronizarAsync(),
     "30 20 * * *",
-    new RecurringJobOptions { TimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo") });
+    new RecurringJobOptions { TimeZone = Pregao.Fuso });
 
 // Primeira execução com a tabela de índices vazia: carga imediata, sem esperar o horário do job
 using (var scope = app.Services.CreateScope())

@@ -11,7 +11,19 @@ public record PosicaoAtivoResponse(
     decimal? ValorPosicao,
     decimal? RentabilidadePercentual,
     Wal.Domain.Enums.TipoAtivo Tipo,
-    Wal.Domain.Enums.CategoriaAlocacao Categoria);
+    Wal.Domain.Enums.CategoriaAlocacao Categoria,
+    DateOnly? DataCotacao)
+{
+    /// <summary>A posição com outra cotação: único lugar das contas de variação do dia, valor e rentabilidade.</summary>
+    public PosicaoAtivoResponse ComCotacao(decimal cotacao, decimal? fechamentoAnterior, DateOnly data) => this with
+    {
+        CotacaoAtual = cotacao,
+        VariacaoDiaPercentual = fechamentoAnterior is decimal anterior && anterior != 0 ? (cotacao - anterior) / anterior : null,
+        ValorPosicao = Quantidade * cotacao,
+        RentabilidadePercentual = PrecoMedio != 0 ? (cotacao - PrecoMedio) / PrecoMedio : null,
+        DataCotacao = data
+    };
+}
 
 /// <param name="ValorInvestido">Custo das posições abertas (quantidade x preço médio).</param>
 /// <param name="ValorAtual">Valor de mercado das posições abertas.</param>

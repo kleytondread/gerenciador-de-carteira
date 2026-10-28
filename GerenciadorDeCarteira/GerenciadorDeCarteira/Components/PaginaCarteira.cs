@@ -68,13 +68,16 @@ public abstract class PaginaCarteira : OwningComponentBase
         }
     }
 
-    private void AoMudarPreferencias() => InvokeAsync(StateHasChanged);
-
-    private void AoAlterarCarteira() => InvokeAsync(async () =>
+    /// <summary>Recarga sem a barra de progresso seguida do redesenho (carteira mudou, cotações novas).</summary>
+    protected async Task RecarregarERedesenharAsync()
     {
         await RecarregarAsync();
         StateHasChanged();
-    });
+    }
+
+    private void AoMudarPreferencias() => InvokeAsync(StateHasChanged);
+
+    private void AoAlterarCarteira() => InvokeAsync(RecarregarERedesenharAsync);
 
     protected override async ValueTask DisposeAsyncCore()
     {

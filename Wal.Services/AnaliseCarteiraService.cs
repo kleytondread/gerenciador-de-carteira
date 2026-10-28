@@ -131,7 +131,7 @@ public class AnaliseCarteiraService(
             .ToList();
 
         return new DetalheAtivoResponse(
-            new AtivoResponse(ativo.Id, ativo.Ticker, ativo.Nome, ativo.Tipo, ativo.EstaAtivo, ativo.DataCadastro),
+            new AtivoResponse(ativo.Id, ativo.Ticker, ativo.Nome, ativo.Tipo, ativo.EstaAtivo, ativo.DataCadastro, ativo.Categoria),
             pregao, posicao, encerrada, serie, proventos, proventosPorAno, movimentacoes, eventos);
     }
 
@@ -416,7 +416,8 @@ public class AnaliseCarteiraService(
                 totais is { Compras: > 0 } ? totais.Resultado / totais.Compras : null,
                 prov12,
                 p.CotacaoAtual is > 0 ? porAcao12 / p.CotacaoAtual : null,
-                p.PrecoMedio > 0 ? porAcao12 / p.PrecoMedio : null);
+                p.PrecoMedio > 0 ? porAcao12 / p.PrecoMedio : null,
+                p.Categoria);
         }).ToList();
     }
 

@@ -10,7 +10,8 @@ public record PosicaoAtivoResponse(
     decimal? VariacaoDiaPercentual,
     decimal? ValorPosicao,
     decimal? RentabilidadePercentual,
-    Wal.Domain.Enums.TipoAtivo Tipo);
+    Wal.Domain.Enums.TipoAtivo Tipo,
+    Wal.Domain.Enums.CategoriaAlocacao Categoria);
 
 /// <param name="ValorInvestido">Custo das posições abertas (quantidade x preço médio).</param>
 /// <param name="ValorAtual">Valor de mercado das posições abertas.</param>

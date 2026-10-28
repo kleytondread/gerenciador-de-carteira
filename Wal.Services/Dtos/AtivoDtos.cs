@@ -4,14 +4,17 @@ namespace Wal.Services.Dtos;
 
 /// <param name="TituloTesouro">Só para Tipo = Tesouro: tipo do título como no arquivo do Tesouro (ex.: "Tesouro IPCA+").</param>
 /// <param name="VencimentoTesouro">Só para Tipo = Tesouro. Ticker e nome são gerados a partir do título.</param>
+/// <param name="Categoria">Porção da carteira; nula usa a sugestão pelo tipo (CategoriasAlocacao.Padrao).</param>
 public record CriarAtivoRequest(
     string Ticker,
     string Nome,
     TipoAtivo Tipo,
     string? TituloTesouro = null,
-    DateOnly? VencimentoTesouro = null);
+    DateOnly? VencimentoTesouro = null,
+    CategoriaAlocacao? Categoria = null);
 
-public record EditarAtivoRequest(string Nome, TipoAtivo Tipo);
+/// <param name="Categoria">Nula mantém a atual. Ignorada para Tesouro (sempre renda fixa).</param>
+public record EditarAtivoRequest(string Nome, TipoAtivo Tipo, CategoriaAlocacao? Categoria = null);
 
 public record AtivoResponse(
     int Id,
@@ -19,7 +22,8 @@ public record AtivoResponse(
     string Nome,
     TipoAtivo Tipo,
     bool EstaAtivo,
-    DateTime DataCadastro);
+    DateTime DataCadastro,
+    CategoriaAlocacao Categoria);
 
 public enum SituacaoNaCarteira { Aberta, Encerrada, SemTransacoes }
 
@@ -40,7 +44,8 @@ public record AtivoRastreadoResponse(
     DateOnly? PrimeiraCotacao,
     DateOnly? UltimaCotacao,
     int Proventos,
-    SaudeCotacoes Saude);
+    SaudeCotacoes Saude,
+    CategoriaAlocacao Categoria);
 
 public record CotacaoResponse(
     DateOnly Data,

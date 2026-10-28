@@ -23,6 +23,9 @@ namespace Wal.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("Categoria")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime>("DataCadastro")
                         .HasColumnType("TEXT");
 

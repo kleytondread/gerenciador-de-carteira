@@ -48,6 +48,7 @@ public partial class AtivoService(
             Ticker = ticker,
             Nome = request.Nome.Trim(),
             Tipo = request.Tipo,
+            Categoria = request.Categoria ?? CategoriasAlocacao.Padrao(request.Tipo),
             EstaAtivo = true,
             DataCadastro = DateTime.UtcNow
         };
@@ -84,6 +85,7 @@ public partial class AtivoService(
             Ticker = titulo.Ticker,
             Nome = titulo.Nome,
             Tipo = TipoAtivo.Tesouro,
+            Categoria = CategoriaAlocacao.RendaFixa,
             TituloTesouro = titulo.TipoTitulo,
             VencimentoTesouro = titulo.Vencimento,
             EstaAtivo = true,
@@ -130,7 +132,7 @@ public partial class AtivoService(
 
         return await query
             .OrderBy(a => a.Ticker)
-            .Select(a => new AtivoResponse(a.Id, a.Ticker, a.Nome, a.Tipo, a.EstaAtivo, a.DataCadastro))
+            .Select(a => new AtivoResponse(a.Id, a.Ticker, a.Nome, a.Tipo, a.EstaAtivo, a.DataCadastro, a.Categoria))
             .ToListAsync();
     }
 
@@ -153,6 +155,9 @@ public partial class AtivoService(
         // Ticker não é editável — o DTO de edição nem o expõe (decisão da Tarefa 2.3).
         ativo.Nome = request.Nome.Trim();
         ativo.Tipo = request.Tipo;
+        // Nula = mantém a atual. Tesouro é sempre renda fixa.
+        if (ativo.Tipo == TipoAtivo.Tesouro) ativo.Categoria = CategoriaAlocacao.RendaFixa;
+        else if (request.Categoria is CategoriaAlocacao categoria) ativo.Categoria = categoria;
         await db.SaveChangesAsync();
 
         return ResultadoOperacao<AtivoResponse>.Ok(ParaResponse(ativo));
@@ -235,7 +240,7 @@ public partial class AtivoService(
                 : SaudeCotacoes.EmDia;
             return new AtivoRastreadoResponse(
                 a.Id, a.Ticker, a.Nome, a.Tipo, a.EstaAtivo, situacao, temTransacao ? Math.Max(quantidade, 0) : 0,
-                c?.Primeira, c?.Ultima, proventos.GetValueOrDefault(a.Id), saude);
+                c?.Primeira, c?.Ultima, proventos.GetValueOrDefault(a.Id), saude, a.Categoria);
         }).ToList();
     }
 
@@ -301,5 +306,5 @@ public partial class AtivoService(
     }
 
     private static AtivoResponse ParaResponse(Ativo ativo) =>
-        new(ativo.Id, ativo.Ticker, ativo.Nome, ativo.Tipo, ativo.EstaAtivo, ativo.DataCadastro);
+        new(ativo.Id, ativo.Ticker, ativo.Nome, ativo.Tipo, ativo.EstaAtivo, ativo.DataCadastro, ativo.Categoria);
 }

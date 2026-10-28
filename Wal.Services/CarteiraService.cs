@@ -40,7 +40,7 @@ public class CarteiraService(AppDbContext db, IPosicaoService posicaoService) : 
 
             resultado.Add(new PosicaoAtivoResponse(
                 ativo.Id, ativo.Ticker, ativo.Nome, posicao.Quantidade, posicao.PrecoMedio,
-                cotacaoAtual, variacaoDia, valorPosicao, rentabilidade, ativo.Tipo));
+                cotacaoAtual, variacaoDia, valorPosicao, rentabilidade, ativo.Tipo, ativo.Categoria));
         }
 
         return resultado;

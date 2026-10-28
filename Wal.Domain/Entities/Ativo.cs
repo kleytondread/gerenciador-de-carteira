@@ -8,6 +8,9 @@ public class Ativo
     public string Ticker { get; set; } = string.Empty;
     public string Nome { get; set; } = string.Empty;
     public TipoAtivo Tipo { get; set; }
+
+    /// <summary>Porção da carteira na alocação (Brasil RV, Dólar RV, Renda Fixa). Tesouro é sempre Renda Fixa.</summary>
+    public CategoriaAlocacao Categoria { get; set; }
     public bool EstaAtivo { get; set; } = true;
     public DateTime DataCadastro { get; set; } = DateTime.UtcNow;
 

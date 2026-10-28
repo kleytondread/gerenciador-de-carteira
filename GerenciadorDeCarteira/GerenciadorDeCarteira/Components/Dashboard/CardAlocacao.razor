@@ -1,19 +1,22 @@
-@* Alocação por classe (rosca do MudChart + tabela) ou por ativo (barras) *@
+@* Alocação por categoria (padrão) ou por classe (rosca do MudChart + tabela), ou por ativo (barras) *@
 
 <CardPainel Titulo="Alocação" Class="@Class">
     <Acoes>
         <MudToggleGroup T="string" @bind-Value="visao" Size="Size.Small" Outlined="true" Delimiters="true"
                         Color="Color.Primary" aria-label="Agrupar por">
-            <MudToggleItem T="string" Value="@("classe")" Text="Classe" />
-            <MudToggleItem T="string" Value="@("ativo")" Text="Ativo" />
+            <MudToggleItem T="string" Value="@VisaoClasse" Text="Classe" />
+            <MudToggleItem T="string" Value="@VisaoCategoria" Text="Categoria" />
+            <MudToggleItem T="string" Value="@VisaoAtivo" Text="Ativo" />
         </MudToggleGroup>
     </Acoes>
     <ChildContent>
-        @if (visao == "classe")
+        @if (visao != VisaoAtivo)
         {
+            var rosca = visao == VisaoCategoria ? categorias : classes;
+            var grupos = rosca.Grupos;
             <div class="wal-rosca">
-                <MudChart T="double" ChartType="ChartType.Donut" ChartSeries="@serieRosca" ChartLabels="@rotulosRosca"
-                          ChartOptions="@opcoesRosca" Width="210px" Height="210px" />
+                <MudChart T="double" ChartType="ChartType.Donut" ChartSeries="@rosca.Serie" ChartLabels="@rosca.Rotulos"
+                          ChartOptions="@rosca.Opcoes" Width="210px" Height="210px" />
                 <div class="wal-rosca-centro" aria-hidden="true">
                     <span class="wal-k">@Posicoes.Count ativos</span>
                     <span class="wal-rosca-total">@Formatacao.Moeda(total, Mascarar)</span>
@@ -21,17 +24,17 @@
             </div>
             <MudSimpleTable Dense="true" Elevation="0" Class="wal-tabela">
                 <thead>
-                    <tr><th>Classe</th><th class="wal-num">Valor</th><th class="wal-num">Peso</th>
+                    <tr><th>@(visao == VisaoCategoria ? "Categoria" : "Classe")</th><th class="wal-num">Valor</th><th class="wal-num">Peso</th>
                         <th class="wal-num" title="Cotação atual sobre o preço médio, sem proventos">Valorização</th></tr>
                 </thead>
                 <tbody>
-                    @foreach (var c in classes)
+                    @foreach (var g in grupos)
                     {
                         <tr>
-                            <td><span class="wal-quadrado" style="background:@CoresSeries.Cor(c.Tipo)"></span>@CoresSeries.NomeClasse(c.Tipo)</td>
-                            <td class="wal-num">@Formatacao.Moeda(c.Valor, Mascarar)</td>
-                            <td class="wal-num wal-forte">@Formatacao.PercentualSimples(c.Peso)</td>
-                            <td class="wal-num @Formatacao.CorGanhoPerda(c.Valorizacao)">@(c.Valorizacao is decimal v ? Formatacao.Percentual(v) : "–")</td>
+                            <td><span class="wal-quadrado" style="background:@g.Cor"></span>@g.Nome</td>
+                            <td class="wal-num">@Formatacao.Moeda(g.Valor, Mascarar)</td>
+                            <td class="wal-num wal-forte">@Formatacao.PercentualSimples(g.Peso)</td>
+                            <td class="wal-num @Formatacao.CorGanhoPerda(g.Valorizacao)">@(g.Valorizacao is decimal v ? Formatacao.Percentual(v) : "–")</td>
                         </tr>
                     }
                 </tbody>
@@ -60,41 +63,53 @@
 
     [Parameter] public string? Class { get; set; }
 
-    private sealed record Classe(TipoAtivo Tipo, decimal Valor, decimal Peso, decimal? Valorizacao);
+    private const string VisaoClasse = "classe";
+    private const string VisaoCategoria = "categoria";
+    private const string VisaoAtivo = "ativo";
 
-    private string visao = "classe";
+    /// <summary>Uma fatia da rosca e uma linha da tabela.</summary>
+    private sealed record Grupo(string Nome, string Cor, decimal Valor, decimal Peso, decimal? Valorizacao);
+
+    // Sempre abre em Categoria (Brasil RV / Dólar RV / Renda Fixa), a visão usada no controle da planilha
+    private string visao = VisaoCategoria;
     private decimal total;
-    private List<Classe> classes = [];
+    private Rosca classes = Rosca.Vazia;
+    private Rosca categorias = Rosca.Vazia;
     private List<PosicaoDetalhadaResponse> ativos = [];
-    private List<ChartSeries<double>> serieRosca = [];
-    private string[] rotulosRosca = [];
-    private DonutChartOptions opcoesRosca = new();
 
     protected override void OnParametersSet()
     {
         total = Posicoes.Sum(p => p.Valor ?? 0);
-        classes = CoresSeries.OrdemClasses
-            .Select(tipo =>
-            {
-                var daClasse = Posicoes.Where(p => p.Tipo == tipo).ToList();
-                var valor = daClasse.Sum(p => p.Valor ?? 0);
-                var custo = daClasse.Sum(p => p.Custo);
-                return new Classe(tipo, valor, total > 0 ? valor / total : 0, custo > 0 ? valor / custo - 1 : null);
-            })
-            .Where(c => c.Valor > 0)
-            .ToList();
-
+        classes = Rosca.De(CoresSeries.OrdemClasses
+            .Select(t => Agrupar(CoresSeries.NomeClasse(t), CoresSeries.Cor(t), Posicoes.Where(p => p.Tipo == t))));
+        categorias = Rosca.De(CoresSeries.OrdemCategorias
+            .Select(c => Agrupar(CoresSeries.NomeCategoria(c), CoresSeries.Cor(c), Posicoes.Where(p => p.Categoria == c))));
         ativos = Posicoes.OrderByDescending(p => p.Valor ?? 0).ToList();
+    }
 
-        serieRosca = [new ChartSeries<double> { Name = "Alocação", Data = new ChartData<double>(classes.Select(c => (double)c.Valor).ToList()) }];
-        rotulosRosca = classes.Select(c => CoresSeries.NomeClasse(c.Tipo)).ToArray();
-        // A tabela abaixo é a legenda; tooltip mostraria R$ mesmo com os valores ocultos
-        opcoesRosca = new DonutChartOptions
+    private Grupo Agrupar(string nome, string cor, IEnumerable<PosicaoDetalhadaResponse> posicoes)
+    {
+        var lista = posicoes.ToList();
+        var valor = lista.Sum(p => p.Valor ?? 0);
+        var custo = lista.Sum(p => p.Custo);
+        return new Grupo(nome, cor, valor, total > 0 ? valor / total : 0, custo > 0 ? valor / custo - 1 : null);
+    }
+
+    /// <summary>Dados prontos da rosca, montados uma vez por atualização (não a cada renderização).</summary>
+    private sealed record Rosca(List<Grupo> Grupos, List<ChartSeries<double>> Serie, string[] Rotulos, DonutChartOptions Opcoes)
+    {
+        public static readonly Rosca Vazia = De([]);
+
+        public static Rosca De(IEnumerable<Grupo> todos)
         {
-            ChartPalette = classes.Select(c => CoresSeries.Cor(c.Tipo)).ToArray(),
-            ShowLegend = false,
-            ShowToolTips = false
-        };
+            var grupos = todos.Where(g => g.Valor > 0).ToList();
+            return new Rosca(
+                grupos,
+                [new ChartSeries<double> { Name = "Alocação", Data = new ChartData<double>(grupos.Select(g => (double)g.Valor).ToList()) }],
+                grupos.Select(g => g.Nome).ToArray(),
+                // A tabela abaixo é a legenda; tooltip mostraria R$ mesmo com os valores ocultos
+                new DonutChartOptions { ChartPalette = grupos.Select(g => g.Cor).ToArray(), ShowLegend = false, ShowToolTips = false });
+        }
     }
 
     // Barra proporcional ao maior peso, para as diferenças aparecerem mesmo entre pesos pequenos

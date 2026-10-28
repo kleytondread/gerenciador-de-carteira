@@ -1003,3 +1003,6 @@ h1:focus { outline: none; }
     stroke: var(--mud-palette-lines-default);
     stroke-opacity: 1;
 }
+
+/* Rótulo pequeno em cima de um controle sem rótulo próprio (ex.: MudToggleGroup no formulário) */
+.wal-campo-rotulado { display: flex; flex-direction: column; gap: 6px; }

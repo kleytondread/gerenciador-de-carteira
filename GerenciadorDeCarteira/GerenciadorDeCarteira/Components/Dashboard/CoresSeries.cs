@@ -68,4 +68,22 @@ public static class CoresSeries
         TipoAtivo.BDR => "BDRs",
         _ => "Tesouro Direto"
     };
+
+    public static readonly CategoriaAlocacao[] OrdemCategorias =
+        [CategoriaAlocacao.BrasilRendaVariavel, CategoriaAlocacao.DolarRendaVariavel, CategoriaAlocacao.RendaFixa];
+
+    // Renda fixa no mesmo amarelo do Tesouro, que é a maior parte dela
+    public static string Cor(CategoriaAlocacao categoria) => categoria switch
+    {
+        CategoriaAlocacao.BrasilRendaVariavel => "#2a78d6",
+        CategoriaAlocacao.DolarRendaVariavel => "#1baf7a",
+        _ => "#eda100"
+    };
+
+    public static string NomeCategoria(CategoriaAlocacao categoria) => categoria switch
+    {
+        CategoriaAlocacao.BrasilRendaVariavel => "Brasil (RV)",
+        CategoriaAlocacao.DolarRendaVariavel => "Dólar (RV)",
+        _ => "Renda Fixa"
+    };
 }

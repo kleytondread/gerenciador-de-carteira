@@ -146,7 +146,8 @@ public record PosicaoDetalhadaResponse(
     decimal? ResultadoTotalPercentual,
     decimal Proventos12Meses,
     decimal? DividendYield12Meses,
-    decimal? YieldOnCost12Meses);
+    decimal? YieldOnCost12Meses,
+    CategoriaAlocacao Categoria);
 
 /// <param name="Resultado">Vendido + proventos − investido.</param>
 /// <param name="ResultadoPercentual">Resultado ÷ investido.</param>

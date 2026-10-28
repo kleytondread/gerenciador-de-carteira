@@ -60,6 +60,21 @@
                 </div>
             }
 
+            @if (tipo != TipoAtivo.Tesouro)
+            {
+                @* Tesouro é sempre renda fixa; nos outros a sugestão segue o tipo até o usuário escolher *@
+                <div class="wal-campo-rotulado">
+                    <span class="wal-k" id="rotulo-categoria">Categoria na alocação</span>
+                    <MudToggleGroup T="CategoriaAlocacao" Value="alocacao" ValueChanged="EscolherAlocacao" Outlined="true" Delimiters="true"
+                                    Color="Color.Primary" Size="Size.Small" aria-labelledby="rotulo-categoria">
+                        @foreach (var c in CoresSeries.OrdemCategorias)
+                        {
+                            <MudToggleItem T="CategoriaAlocacao" Value="c" Text="@CoresSeries.NomeCategoria(c)" />
+                        }
+                    </MudToggleGroup>
+                </div>
+            }
+
             @if (erro is not null)
             {
                 <MudAlert Severity="Severity.Error" Dense="true">@erro</MudAlert>
@@ -88,6 +103,10 @@
     private string? erro;
     private bool salvando;
 
+    private CategoriaAlocacao alocacao = CategoriasAlocacao.Padrao(TipoAtivo.Acao);
+    // Enquanto falso, trocar o tipo troca a categoria sugerida (ex.: BDR → Dólar)
+    private bool alocacaoEscolhida;
+
     // Títulos do Tesouro: carregados na primeira vez que o tipo Tesouro é escolhido
     private List<TituloTesouroResponse>? titulos;
     private bool carregandoTitulos;
@@ -101,12 +120,21 @@
         if (Editando is null) return;
         tipo = Editando.Tipo;
         nome = Editando.Nome;
+        alocacao = Editando.Categoria;
+        alocacaoEscolhida = true;
+    }
+
+    private void EscolherAlocacao(CategoriaAlocacao nova)
+    {
+        alocacao = nova;
+        alocacaoEscolhida = true;
     }
 
     private async Task TrocarTipoAsync(TipoAtivo novo)
     {
         tipo = novo;
         erro = null;
+        if (!alocacaoEscolhida) alocacao = CategoriasAlocacao.Padrao(tipo);
         if (tipo != TipoAtivo.Tesouro || titulos is not null) return;
 
         carregandoTitulos = true;
@@ -152,7 +180,7 @@
             var servico = scope.ServiceProvider.GetRequiredService<IAtivoService>();
             if (Editando is not null)
             {
-                var editado = await servico.EditarAsync(Editando.Id, new EditarAtivoRequest(nome, tipo));
+                var editado = await servico.EditarAsync(Editando.Id, new EditarAtivoRequest(nome, tipo, alocacao));
                 if (editado.Sucesso) MudDialog.Close(DialogResult.Ok(editado.Valor!.Ticker));
                 else erro = editado.Erro;
                 return;
@@ -165,7 +193,7 @@
             }
             var pedido = tipo == TipoAtivo.Tesouro
                 ? new CriarAtivoRequest(titulo!.Ticker, titulo.Nome, TipoAtivo.Tesouro, titulo.TipoTitulo, titulo.Vencimento)
-                : new CriarAtivoRequest(ticker, nome, tipo);
+                : new CriarAtivoRequest(ticker, nome, tipo, Categoria: alocacao);
             var criado = await servico.CriarAsync(pedido);
             if (criado.Sucesso) MudDialog.Close(DialogResult.Ok(criado.Valor!.Ticker));
             else erro = criado.Erro;

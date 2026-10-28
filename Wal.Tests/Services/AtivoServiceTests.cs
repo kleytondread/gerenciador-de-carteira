@@ -288,6 +288,7 @@ public class AtivoServiceTests : SqliteInMemoryTestBase
         Assert.Equal("Tesouro IPCA+ 2045", ativo.Nome);
         Assert.Equal("Tesouro IPCA+", ativo.TituloTesouro);
         Assert.Equal(new DateOnly(2045, 5, 15), ativo.VencimentoTesouro);
+        Assert.Equal(CategoriaAlocacao.RendaFixa, ativo.Categoria);
         jobSchedulerMock.Verify(j => j.EnfileirarCargaHistoricaInicial(ativo.Id), Times.Once);
     }
 
@@ -420,5 +421,57 @@ public class AtivoServiceTests : SqliteInMemoryTestBase
         await sut.DefinirRastreamentoAsync(ativo.Id, true);
         await Db.Entry(ativo).ReloadAsync();
         Assert.True(ativo.EstaAtivo);
+    }
+
+    [Theory]
+    [InlineData(TipoAtivo.Acao, CategoriaAlocacao.BrasilRendaVariavel)]
+    [InlineData(TipoAtivo.FII, CategoriaAlocacao.BrasilRendaVariavel)]
+    [InlineData(TipoAtivo.ETF, CategoriaAlocacao.BrasilRendaVariavel)]
+    [InlineData(TipoAtivo.BDR, CategoriaAlocacao.DolarRendaVariavel)]
+    public async Task CriarAsync_SemCategoria_UsaASugestaoPeloTipo(TipoAtivo tipo, CategoriaAlocacao esperada)
+    {
+        var resultado = await sut.CriarAsync(new CriarAtivoRequest("TSLA34", "Nome", tipo));
+
+        Assert.Equal(esperada, resultado.Valor!.Categoria);
+        Assert.Equal(esperada, Db.Ativos.Single().Categoria);
+    }
+
+    [Fact]
+    public async Task CriarAsync_ComCategoria_GravaAEscolhida()
+    {
+        // ETF de S&P 500 negociado na B3: renda variável em dólar
+        var resultado = await sut.CriarAsync(new CriarAtivoRequest("IVVB11", "iShares S&P 500", TipoAtivo.ETF,
+            Categoria: CategoriaAlocacao.DolarRendaVariavel));
+
+        Assert.Equal(CategoriaAlocacao.DolarRendaVariavel, resultado.Valor!.Categoria);
+    }
+
+    [Fact]
+    public async Task EditarAsync_TrocaACategoriaENulaMantem()
+    {
+        var ativo = Fixtures.NovoAtivo("B5P211", "IT Now IMA-B5", TipoAtivo.ETF);
+        Db.Ativos.Add(ativo);
+        await Db.SaveChangesAsync();
+
+        await sut.EditarAsync(ativo.Id, new EditarAtivoRequest("IT Now IMA-B5", TipoAtivo.ETF, CategoriaAlocacao.RendaFixa));
+        await sut.EditarAsync(ativo.Id, new EditarAtivoRequest("IT Now IMA-B5 P2", TipoAtivo.ETF));
+
+        await Db.Entry(ativo).ReloadAsync();
+        Assert.Equal(CategoriaAlocacao.RendaFixa, ativo.Categoria);
+        Assert.Equal("IT Now IMA-B5 P2", ativo.Nome);
+    }
+
+    [Fact]
+    public async Task EditarAsync_TesouroContinuaRendaFixa()
+    {
+        var ativo = Fixtures.NovoAtivo("IPCA+ 2045", "Tesouro IPCA+ 2045", TipoAtivo.Tesouro);
+        ativo.Categoria = CategoriaAlocacao.RendaFixa;
+        Db.Ativos.Add(ativo);
+        await Db.SaveChangesAsync();
+
+        await sut.EditarAsync(ativo.Id, new EditarAtivoRequest("Tesouro IPCA+ 2045", TipoAtivo.Tesouro, CategoriaAlocacao.BrasilRendaVariavel));
+
+        await Db.Entry(ativo).ReloadAsync();
+        Assert.Equal(CategoriaAlocacao.RendaFixa, ativo.Categoria);
     }
 }

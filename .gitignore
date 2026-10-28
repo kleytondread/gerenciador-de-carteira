@@ -13,6 +13,9 @@
 *.csv
 *.ods
 
+# Anotações pessoais de desenvolvimento (especificação, planos, wireframes) e planilhas de conferência
+Wal.Docs/
+
 # Arquivos baixados pela aplicação (preços do Tesouro Direto)
 **/Dados/
 

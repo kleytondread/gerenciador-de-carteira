@@ -6,6 +6,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>GerenciadorDeCarteira</RootNamespace>
     <AssemblyName>GerenciadorDeCarteira</AssemblyName>
+    <!-- Nome exibido no Gerenciador de Tarefas -->
+    <AssemblyTitle>Gerenciador de Carteira</AssemblyTitle>
+    <Product>Gerenciador de Carteira</Product>
+    <!-- App de um usuário só: o GC de servidor reservaria memória por núcleo do processador sem necessidade -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
     <UserSecretsId>3c069fff-38d9-400a-9d10-aaf4c084b241</UserSecretsId>
   </PropertyGroup>
 

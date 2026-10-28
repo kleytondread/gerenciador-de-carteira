@@ -2,6 +2,7 @@ using GerenciadorDeCarteira.Components;
 using GerenciadorDeCarteira.Endpoints;
 using Hangfire;
 using Hangfire.Storage.SQLite;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
 using Wal.Data;
@@ -11,7 +12,30 @@ using Wal.Services;
 using Wal.Services.TesouroDireto;
 
 
-var builder = WebApplication.CreateBuilder(args);
+// Publicado, a raiz do app (appsettings.json, wwwroot) é a pasta do executável, e não a pasta de onde ele foi
+// aberto (um atalho ou o Agendador podem abrir de qualquer lugar). Em desenvolvimento fica o padrão do .NET.
+var emDesenvolvimento = string.Equals(
+    Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT"),
+    "Development", StringComparison.OrdinalIgnoreCase);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = emDesenvolvimento ? null : AppContext.BaseDirectory
+});
+
+// Pasta dos dados (banco e arquivos baixados). Publicado, fica fora da pasta do programa
+// (%LOCALAPPDATA%\GerenciadorDeCarteira), para atualizar ou apagar o app não levar os dados junto.
+// Em Development é a pasta do projeto (appsettings.Development.json). Caminho relativo parte do ContentRoot.
+var pastaDados = builder.Configuration["Dados:Pasta"] is { Length: > 0 } pastaConfigurada
+    ? Environment.ExpandEnvironmentVariables(pastaConfigurada)
+    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GerenciadorDeCarteira");
+pastaDados = Path.GetFullPath(pastaDados, builder.Environment.ContentRootPath);
+Directory.CreateDirectory(pastaDados);
+
+// Banco com caminho absoluto: relativo, ele seria criado na pasta de onde o processo foi aberto
+var conexao = new SqliteConnectionStringBuilder(builder.Configuration.GetConnectionString("DefaultConnection"));
+conexao.DataSource = Path.GetFullPath(
+    string.IsNullOrWhiteSpace(conexao.DataSource) ? "gestorcarteira.db" : conexao.DataSource, pastaDados);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -25,7 +49,7 @@ builder.Services.AddScoped<NotificacoesCarteira>();
 builder.Services.AddScoped<PainelTransacaoEstado>();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlite(conexao.ToString()));
 
 builder.Services.AddHttpClient<IYahooFinanceClient, YahooFinanceClient>(client =>
 {
@@ -37,10 +61,11 @@ builder.Services.AddHttpClient<IYahooFinanceClient, YahooFinanceClient>(client =
 });
 
 // Tesouro Direto: preços vêm do arquivo de dados abertos do Tesouro Transparente, salvo em disco
-// (caminho relativo à raiz do projeto) e baixado de novo só quando tem pelo menos 5h.
+// (caminho relativo à pasta de dados) e baixado de novo só quando tem pelo menos 5h.
 var tesouroOptions = builder.Configuration.GetSection("TesouroDireto").Get<TesouroDiretoOptions>() ?? new TesouroDiretoOptions();
-tesouroOptions.CaminhoArquivo = Path.Combine(builder.Environment.ContentRootPath,
-    string.IsNullOrWhiteSpace(tesouroOptions.CaminhoArquivo) ? "Dados/precotaxatesourodireto.csv" : tesouroOptions.CaminhoArquivo);
+tesouroOptions.CaminhoArquivo = Path.GetFullPath(
+    string.IsNullOrWhiteSpace(tesouroOptions.CaminhoArquivo) ? "Dados/precotaxatesourodireto.csv" : tesouroOptions.CaminhoArquivo,
+    pastaDados);
 builder.Services.AddSingleton(tesouroOptions);
 builder.Services.AddHttpClient<ITesouroDiretoClient, TesouroDiretoClient>(client =>
 {
@@ -73,33 +98,32 @@ builder.Services.AddScoped<IProventoService, ProventoService>();
 // Hangfire.Storage.SQLite não tem storage oficial do Hangfire para SQLite;
 // usa o mesmo arquivo de banco da aplicação (storage roda em tabelas próprias, prefixo Hangfire).
 // Atenção: UseSQLiteStorage espera o caminho puro do arquivo, não uma connection string
-// no formato "Data Source=..." do EF Core — por isso o valor é extraído via SqliteConnectionStringBuilder.
-var sqliteDbPath = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(
-    builder.Configuration.GetConnectionString("DefaultConnection")).DataSource;
-
+// no formato "Data Source=..." do EF Core.
 builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
     .UseRecommendedSerializerSettings()
-    .UseSQLiteStorage(sqliteDbPath));
+    .UseSQLiteStorage(conexao.DataSource));
 
 builder.Services.AddHangfireServer();
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+// Sempre, em qualquer ambiente: numa máquina nova cria o banco inteiro (vazio); num banco existente aplica só
+// as migrations pendentes, então atualizar o app também atualiza o banco
+using (var scope = app.Services.CreateScope())
 {
-    using var scope = app.Services.CreateScope();
     scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
 }
-else
-{
+
+if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    app.UseHsts();
-}
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-app.UseHttpsRedirection();
+// Publicado, o app só escuta HTTP no localhost (appsettings.Production.json): redirecionar para HTTPS levaria a
+// uma porta que não existe. Em desenvolvimento o perfil "https" do Visual Studio continua funcionando.
+if (app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
 app.UseAntiforgery();
 
 // Sem autenticação nesta fase (MVP local, sistema inteiro ainda não tem login) — ver spec seção 2.

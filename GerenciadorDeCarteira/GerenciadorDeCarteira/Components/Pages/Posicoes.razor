@@ -1,6 +1,7 @@
 @page "/posicoes"
 @inherits OwningComponentBase
 @inject PreferenciasExibicao Preferencias
+@inject NotificacoesCarteira Notificacoes
 @inject NavigationManager Nav
 
 <PageTitle>Posições - Gestor de Carteira B3</PageTitle>
@@ -203,6 +204,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         Preferencias.Mudou += AoMudarPreferencias;
+        Notificacoes.CarteiraAlterada += AoAlterarCarteira;
         try
         {
             painel = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterPainelPosicoesAsync();
@@ -362,9 +364,17 @@ else
 
     private void AoMudarPreferencias() => InvokeAsync(StateHasChanged);
 
+    // Transação salva no painel lateral: recalcula as posições
+    private void AoAlterarCarteira() => InvokeAsync(async () =>
+    {
+        painel = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterPainelPosicoesAsync();
+        StateHasChanged();
+    });
+
     protected override async ValueTask DisposeAsyncCore()
     {
         Preferencias.Mudou -= AoMudarPreferencias;
+        Notificacoes.CarteiraAlterada -= AoAlterarCarteira;
         await base.DisposeAsyncCore();
     }
 }

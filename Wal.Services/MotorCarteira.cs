@@ -61,6 +61,9 @@ internal sealed class MotorCarteira
     /// <summary>Série diária do ativo pedido em <see cref="CalcularAsync"/>; vazia se nenhum foi pedido.</summary>
     public List<PontoAtivo> SerieAtivo { get; } = [];
 
+    /// <summary>Movimentações de compra que são a bonificação em si (não são aporte; ver <see cref="ConversaoBaseYahoo"/>).</summary>
+    public IReadOnlySet<int> Bonificacoes { get; private set; } = new HashSet<int>();
+
     /// <param name="ativoSerie">Ativo cuja série diária (valor da posição × aplicado) também é guardada.</param>
     public static async Task<MotorCarteira> CalcularAsync(
         AppDbContext db, IReadOnlyCollection<DateOnly>? datasFoto = null, int? ativoSerie = null)
@@ -106,6 +109,7 @@ internal sealed class MotorCarteira
             .Where(e => ativoIds.Contains(e.AtivoId))
             .ToListAsync();
         var conversao = ConversaoBaseYahoo.Criar(movimentacoes, eventos);
+        motor.Bonificacoes = conversao.Bonificacoes;
         var ajustesFracaoPorData = conversao.AjustesFracao.ToLookup(a => a.Data);
 
         var dataInicio = movimentacoes[0].Data;

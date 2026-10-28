@@ -1,439 +1,403 @@
 @page "/ativos"
-@using System.ComponentModel.DataAnnotations
 @* DbContext próprio por página — ver comentário em Home.razor *@
 @inherits OwningComponentBase
-@inject IJSRuntime JsRuntime
+@inject PreferenciasExibicao Preferencias
+@inject IDialogService Dialogos
+@inject ISnackbar Snackbar
+@inject IJSRuntime Js
 
 <PageTitle>Ativos rastreados - Gestor de Carteira B3</PageTitle>
 <SectionContent SectionName="@TituloPagina.Secao">Ativos rastreados</SectionContent>
 
-<div class="card mb-4">
-    <div class="card-body">
-        <h5 class="card-title">Cadastrar novo ativo</h5>
-        <EditForm Model="novoAtivo" OnValidSubmit="CadastrarAsync">
-            <DataAnnotationsValidator />
-            <div class="row g-2 align-items-end">
-                <div class="col-auto">
-                    <label class="form-label mb-0">Tipo</label>
-                    <InputSelect @bind-Value="novoAtivo.Tipo" @bind-Value:after="OnTipoAlteradoAsync" class="form-select">
-                        <option value="@TipoAtivo.Acao">Ação</option>
-                        <option value="@TipoAtivo.ETF">ETF</option>
-                        <option value="@TipoAtivo.FII">FII</option>
-                        <option value="@TipoAtivo.BDR">BDR</option>
-                        <option value="@TipoAtivo.Tesouro">Tesouro</option>
-                    </InputSelect>
-                </div>
-                @if (novoAtivo.Tipo == TipoAtivo.Tesouro)
+<MudTabs Elevation="0" ApplyEffectsToContainer="true" TabPanelsClass="pt-4" Class="wal-abas" @bind-ActivePanelIndex="aba">
+    <MudTabPanel Text="Ativos">
+        @if (carregando)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Carregando ativos" />
+        }
+        else
+        {
+            <div class="wal-painel">
+                @if (Desatualizados.Count > 0 && filtro != Filtro.Desatualizados)
                 {
-                    <div class="col-auto">
-                        <label class="form-label mb-0">Tipo de título</label>
-                        <select class="form-select" @bind="filtroCategoria" @bind:after="OnFiltroCategoriaAlterado"
-                                disabled="@carregandoTitulos">
-                            <option value="">Todos</option>
-                            @foreach (var categoria in TitulosTesouro.Categorias)
-                            {
-                                <option value="@categoria">@categoria</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="col-auto">
-                        <label class="form-label mb-0">Título</label>
-                        <input class="form-control" list="titulos-tesouro" style="width:380px"
-                               placeholder="@(carregandoTitulos ? "Carregando títulos..." : "Pesquise pelo nome (ex.: IPCA+ 2045)")"
-                               disabled="@carregandoTitulos"
-                               @bind="novoAtivo.BuscaTitulo" @bind:event="oninput" @bind:after="SelecionarTituloPelaBusca" />
-                        <datalist id="titulos-tesouro">
-                            @foreach (var titulo in TitulosFiltrados)
-                            {
-                                <option value="@RotuloTitulo(titulo)"></option>
-                            }
-                        </datalist>
-                    </div>
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="wal-s12 wal-alerta"
+                              ContentAlignment="HorizontalAlignment.Left">
+                        <div class="wal-alerta-corpo">
+                            <span>
+                                <strong>@Desatualizados.Count @(Desatualizados.Count == 1 ? "ativo sem cotação nova" : "ativos sem cotação nova")</strong>
+                                há mais de 5 pregões: @string.Join(", ", Desatualizados.Take(4).Select(a => a.Ticker))@(Desatualizados.Count > 4 ? "…" : "")
+                            </span>
+                            <span class="wal-alerta-acoes">
+                                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Warning" OnClick="() => filtro = Filtro.Desatualizados">Ver</MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Warning" OnClick="PausarDesatualizadosAsync">Pausar todos</MudButton>
+                            </span>
+                        </div>
+                    </MudAlert>
                 }
-                else
-                {
-                    <div class="col-auto">
-                        <label class="form-label mb-0">Ticker</label>
-                        <InputText Value="@novoAtivo.Ticker" ValueChanged="OnTickerChanged" ValueExpression="() => novoAtivo.Ticker"
-                                   class="form-control" placeholder="PETR4" style="width:140px" maxlength="6" />
-                    </div>
-                    <div class="col-auto">
-                        <label class="form-label mb-0">Nome</label>
-                        <InputText @bind-Value="novoAtivo.Nome" class="form-control" placeholder="Petrobras PN" style="width:280px" />
-                    </div>
-                }
-                <div class="col-auto">
-                    <button type="submit" class="btn btn-primary" disabled="@salvandoNovo">
-                        @if (salvandoNovo)
-                        {
-                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                        }
-                        Cadastrar
-                    </button>
-                </div>
+
+                <CardPainel Titulo="Ativos" Subtitulo="@($"{ativos.Count(a => a.Rastreando)} rastreados")" SemEspacamento="true" Class="wal-s12">
+                    <Acoes>
+                        <MudTextField T="string" @bind-Value="busca" Immediate="true" DebounceInterval="200" Placeholder="Buscar ativo"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start"
+                                      AdornmentIcon="@Icons.Material.Outlined.Search" Clearable="true" Class="wal-busca" aria-label="Buscar ativo" />
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" DropShadow="false"
+                                   StartIcon="@Icons.Material.Outlined.Sync" OnClick="SincronizarTudo">Sincronizar tudo</MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" DropShadow="false"
+                                   StartIcon="@Icons.Material.Outlined.Add" OnClick="() => AbrirDialogoAsync(null)">Adicionar ativo</MudButton>
+                    </Acoes>
+                    <ChildContent>
+                        <div class="wal-filtros">
+                            <MudChipSet T="Filtro" SelectionMode="SelectionMode.SingleSelection" @bind-SelectedValue="filtro"
+                                        Size="Size.Small" Variant="Variant.Outlined" SelectedColor="Color.Primary" CheckMark="true" aria-label="Filtrar">
+                                @foreach (var f in Enum.GetValues<Filtro>())
+                                {
+                                    <MudChip T="Filtro" Value="f" Default="@(f == Filtro.Todos)">@NomeFiltro(f) <span class="wal-k ml-1">@ativos.Count(a => Passa(a, f))</span></MudChip>
+                                }
+                            </MudChipSet>
+                        </div>
+                        @{ var lista = Visiveis().ToList(); }
+                        <div class="wal-rolagem">
+                            <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="wal-tabela wal-tabela-acoes">
+                                <thead>
+                                    <tr>
+                                        <th>Ativo</th>
+                                        <th class="wal-sec">Tipo</th>
+                                        <th class="wal-sec">Fonte</th>
+                                        <th class="wal-num">Na carteira</th>
+                                        <th>Última cotação</th>
+                                        <th class="wal-sec">Histórico desde</th>
+                                        <th class="wal-num wal-sec">Proventos</th>
+                                        <th title="Buscar cotações e proventos todo dia às 20h">Rastrear</th>
+                                        <th class="wal-acoes-col"><span class="wal-oculto-leitor">Ações</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var a in lista)
+                                    {
+                                        <tr class="@(a.Rastreando ? null : "wal-linha-pausada")">
+                                            <td>
+                                                @if (a.Situacao == SituacaoNaCarteira.SemTransacoes)
+                                                {
+                                                    <span class="wal-forte">@a.Ticker</span>
+                                                }
+                                                else
+                                                {
+                                                    <a href="@($"posicoes/{a.Id}")" class="wal-forte">@a.Ticker</a>
+                                                }
+                                                <div class="wal-nome">@a.Nome</div>
+                                            </td>
+                                            <td class="wal-sec">@Formatacao.NomeTipo(a.Tipo)</td>
+                                            <td class="wal-sec wal-k">@(a.Tipo == TipoAtivo.Tesouro ? "Tesouro Transparente" : "Yahoo Finance")</td>
+                                            <td class="wal-num">
+                                                @switch (a.Situacao)
+                                                {
+                                                    case SituacaoNaCarteira.Aberta:
+                                                        @(Preferencias.Mascarar ? "•••" : Formatacao.QuantidadeCurta(a.Quantidade))
+                                                        break;
+                                                    case SituacaoNaCarteira.Encerrada:
+                                                        <span class="wal-k">Encerrada</span>
+                                                        break;
+                                                    default:
+                                                        <span class="wal-k">–</span>
+                                                        break;
+                                                }
+                                            </td>
+                                            <td>
+                                                <span class="wal-cotacao-data">@(a.UltimaCotacao?.ToString("dd/MM/yyyy") ?? "–")</span>
+                                                @Saude(a)
+                                            </td>
+                                            <td class="wal-sec">@(a.PrimeiraCotacao?.ToString("MM/yyyy") ?? "–")</td>
+                                            <td class="wal-num wal-sec">@(a.Proventos > 0 ? a.Proventos : "–")</td>
+                                            <td>
+                                                <MudSwitch T="bool" Value="a.Rastreando" ValueChanged="v => DefinirRastreamentoAsync(a, v)" Color="Color.Primary"
+                                                           Disabled="@(alterando == a.Id)" aria-label="@($"Rastrear {a.Ticker}")" />
+                                            </td>
+                                            <td class="wal-num wal-acoes-col">
+                                                <MudTooltip Text="Baixar o histórico inteiro de novo">
+                                                    <MudIconButton Icon="@Icons.Material.Outlined.CloudSync" Size="Size.Small" OnClick="() => RecarregarHistorico(a)"
+                                                                   aria-label="@($"Baixar de novo o histórico de {a.Ticker}")" />
+                                                </MudTooltip>
+                                                <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" OnClick="() => AbrirDialogoAsync(a)"
+                                                               aria-label="@($"Editar {a.Ticker}")" />
+                                            </td>
+                                        </tr>
+                                    }
+                                    @if (lista.Count == 0)
+                                    {
+                                        <tr><td colspan="9" class="wal-vazio">@(ativos.Count == 0 ? "Nenhum ativo cadastrado ainda." : "Nenhum ativo encontrado.")</td></tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </div>
+                    </ChildContent>
+                </CardPainel>
             </div>
-            @if (novoAtivo.Tipo == TipoAtivo.Tesouro)
-            {
-                @if (erroTitulos is not null)
-                {
-                    <div class="text-danger small mt-2">@erroTitulos</div>
-                }
-                else if (novoAtivo.TituloSelecionado is { } sel)
-                {
-                    <div class="text-muted small mt-2">
-                        Será cadastrado como <strong>@sel.Ticker</strong> — vencimento @sel.Vencimento.ToString("dd/MM/yyyy"),
-                        preço de @sel.UltimoPreco.ToString("C2", Formatacao.PtBR) em @sel.DataUltimoPreco.ToString("dd/MM/yyyy")
-                        @if (sel.TaxaCompra is decimal taxa)
-                        {
-                            <span class="ms-1">(taxa de compra @taxa.ToString("N2", Formatacao.PtBR)%)</span>
-                        }
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="Índices">
+        <div class="wal-painel">
+            <CardPainel Titulo="Índices de referência" Subtitulo="Comparados com a carteira no Dashboard" SemEspacamento="true" Class="wal-s8">
+                <Acoes>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" DropShadow="false"
+                               StartIcon="@Icons.Material.Outlined.Sync" OnClick="SincronizarIndices">Sincronizar índices</MudButton>
+                </Acoes>
+                <ChildContent>
+                    <div class="wal-rolagem">
+                        <MudSimpleTable Dense="true" Elevation="0" Class="wal-tabela">
+                            <thead>
+                                <tr>
+                                    <th>Índice</th>
+                                    <th class="wal-sec">Fonte</th>
+                                    <th class="wal-num">Último valor</th>
+                                    <th>Atualizado</th>
+                                    <th class="wal-sec">Desde</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var i in indices)
+                                {
+                                    var info = Info(i.Indice);
+                                    <tr>
+                                        <td><span class="wal-forte">@info.Nome</span><div class="wal-nome">@info.Descricao</div></td>
+                                        <td class="wal-sec wal-k">@info.Fonte</td>
+                                        <td class="wal-num">@(i.UltimoValor is decimal v ? info.Formatar(v) : "–")</td>
+                                        <td>
+                                            <span class="wal-cotacao-data">@(i.UltimaData?.ToString("dd/MM/yyyy") ?? "–")</span>
+                                            @SaudeIndice(i, info.Mensal)
+                                        </td>
+                                        <td class="wal-sec">@(i.PrimeiraData?.ToString("MM/yyyy") ?? "–")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
                     </div>
-                }
-                else if (!carregandoTitulos)
-                {
-                    <div class="text-muted small mt-2">@TitulosFiltrados.Count() título(s) disponível(is). Preços: Tesouro Transparente.</div>
-                }
-            }
-            <ValidationSummary class="text-danger mt-2 mb-0" />
-        </EditForm>
+                </ChildContent>
+            </CardPainel>
 
-        @if (erroCadastro is not null)
-        {
-            <div class="alert alert-danger mt-3 mb-0">@erroCadastro</div>
-        }
-        @if (mensagemCadastro is not null)
-        {
-            <div class="alert alert-success mt-3 mb-0">@mensagemCadastro</div>
-        }
-    </div>
-</div>
-
-<div class="d-flex gap-2 mb-3 align-items-center">
-    <input class="form-control" style="max-width:280px" placeholder="Buscar por ticker ou nome"
-           @bind="busca" @bind:event="oninput" @onkeydown="OnBuscaKeyDown" />
-    <button class="btn btn-outline-secondary" @onclick="CarregarAsync">Buscar</button>
-    <div class="form-check ms-3">
-        <input class="form-check-input" type="checkbox" id="incluirInativos" @bind="incluirInativos" @bind:after="CarregarAsync" />
-        <label class="form-check-label" for="incluirInativos">Incluir inativos</label>
-    </div>
-</div>
-
-@if (erroLista is not null)
-{
-    <div class="alert alert-danger">@erroLista</div>
-}
-
-@if (carregandoLista)
-{
-    <p class="text-muted">Carregando...</p>
-}
-else if (ativos.Count == 0)
-{
-    <p class="text-muted">Nenhum ativo encontrado.</p>
-}
-else
-{
-    <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle">
-            <thead>
-                <tr>
-                    <th>Ticker</th>
-                    <th>Nome</th>
-                    <th>Tipo</th>
-                    <th>Status</th>
-                    <th>Cadastro</th>
-                    <th class="text-end">Ações</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var ativo in ativos)
-                {
-                    <tr>
-                        @if (edicaoId == ativo.Id)
-                        {
-                            <td class="fw-semibold text-muted" title="Ticker não é editável — se errou, exclua e recadastre.">@ativo.Ticker</td>
-                            <td><input class="form-control form-control-sm" @bind="nomeEdicao" /></td>
-                            <td>
-                                @if (ativo.Tipo == TipoAtivo.Tesouro)
-                                {
-                                    @* Título do Tesouro não troca de tipo (a cotação vem de outra fonte) *@
-                                    <span class="text-muted">@Formatacao.NomeTipo(ativo.Tipo)</span>
-                                }
-                                else
-                                {
-                                    <select class="form-select form-select-sm" @bind="tipoEdicao">
-                                        <option value="@TipoAtivo.Acao">Ação</option>
-                                        <option value="@TipoAtivo.ETF">ETF</option>
-                                        <option value="@TipoAtivo.FII">FII</option>
-                                        <option value="@TipoAtivo.BDR">BDR</option>
-                                    </select>
-                                }
-                            </td>
-                            <td>@(ativo.EstaAtivo ? "Ativo" : "Inativo")</td>
-                            <td>@ativo.DataCadastro.ToLocalTime().ToString("dd/MM/yyyy")</td>
-                            <td class="text-end">
-                                <button class="btn btn-sm btn-success me-1" @onclick="() => SalvarEdicaoAsync(ativo.Id)" disabled="@salvandoEdicao">Salvar</button>
-                                <button class="btn btn-sm btn-outline-secondary" @onclick="CancelarEdicao">Cancelar</button>
-                            </td>
-                        }
-                        else
-                        {
-                            <td class="fw-semibold">@ativo.Ticker</td>
-                            <td>@ativo.Nome</td>
-                            <td>@Formatacao.NomeTipo(ativo.Tipo)</td>
-                            <td>
-                                <span class="badge @(ativo.EstaAtivo ? "bg-success" : "bg-secondary")">
-                                    @(ativo.EstaAtivo ? "Ativo" : "Inativo")
-                                </span>
-                            </td>
-                            <td>@ativo.DataCadastro.ToLocalTime().ToString("dd/MM/yyyy")</td>
-                            <td class="text-end">
-                                <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => IniciarEdicao(ativo)">Editar</button>
-                                @if (ativo.EstaAtivo)
-                                {
-                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DesativarAsync(ativo)">Desativar</button>
-                                }
-                                else
-                                {
-                                    <button class="btn btn-sm btn-outline-success" @onclick="() => ReativarAsync(ativo)">Reativar</button>
-                                }
-                            </td>
-                        }
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-}
+            <CardPainel Titulo="IPCA + X%" Subtitulo="Meta de rentabilidade real" Class="wal-s4">
+                <div class="wal-formulario">
+                    <MudNumericField T="decimal" Value="taxaIpcaMais" ValueChanged="TrocarTaxaIpcaMaisAsync" Label="Taxa real ao ano"
+                                     Variant="Variant.Outlined" Min="0" Max="20" Step="0.5m" Format="0.##" Culture="@Formatacao.PtBR"
+                                     Adornment="Adornment.End" AdornmentText="% a.a." />
+                    <div class="wal-ajuda">
+                        <span>Aparece como <strong>@CoresSeries.Nome(Benchmark.IpcaMais, taxaIpcaMais / 100)</strong> no gráfico de rentabilidade</span>
+                    </div>
+                </div>
+            </CardPainel>
+        </div>
+    </MudTabPanel>
+</MudTabs>
 
 @code {
     private IAtivoService AtivoService => ScopedServices.GetRequiredService<IAtivoService>();
-    private ITesouroDiretoService TesouroDireto => ScopedServices.GetRequiredService<ITesouroDiretoService>();
+    private IAtivoJobScheduler Jobs => ScopedServices.GetRequiredService<IAtivoJobScheduler>();
 
-    // Títulos do Tesouro para o cadastro: carregados na primeira vez que o tipo Tesouro é escolhido
-    private List<TituloTesouroResponse>? titulosTesouro;
-    private bool carregandoTitulos;
-    private string? erroTitulos;
-    private string filtroCategoria = string.Empty;
+    private enum Filtro { Todos, NaCarteira, Encerrados, SemTransacoes, Desatualizados, Pausados }
 
-    private IEnumerable<TituloTesouroResponse> TitulosFiltrados =>
-        (titulosTesouro ?? []).Where(t => filtroCategoria == string.Empty || t.Categoria == filtroCategoria);
+    private sealed record InfoIndice(string Nome, string Descricao, string Fonte, bool Mensal, Func<decimal, string> Formatar);
 
-    private static string RotuloTitulo(TituloTesouroResponse t) => $"{t.Nome} — venc. {t.Vencimento:dd/MM/yyyy}";
+    private int aba;
+    private bool carregando = true;
+    private List<AtivoRastreadoResponse> ativos = [];
+    private List<SituacaoIndiceResponse> indices = [];
+    private string? busca;
+    private Filtro filtro = Filtro.Todos;
+    private int? alterando;
+    // Em pontos percentuais (6 = IPCA + 6% a.a.), como o usuário digita
+    private decimal taxaIpcaMais = CoresSeries.TaxaIpcaMaisPadrao * 100;
 
-    // Serializa as recargas da lista: Buscar/Enter/checkbox podem disparar quase juntos, e o
-    // DbContext não aceita duas operações simultâneas.
-    private readonly SemaphoreSlim cargaLock = new(1, 1);
+    /// <summary>Rastreados que pararam de receber cotação (ex.: saíram da bolsa ou mudaram de ticker).</summary>
+    private List<AtivoRastreadoResponse> Desatualizados => ativos.Where(a => a.Rastreando && a.Saude == SaudeCotacoes.Desatualizada).ToList();
 
-    private List<AtivoResponse> ativos = [];
-    private bool carregandoLista;
-    private string? erroLista;
+    protected override async Task OnInitializedAsync()
+    {
+        Preferencias.Mudou += AoMudarPreferencias;
+        await CarregarAsync();
+    }
 
-    private string busca = string.Empty;
-    private bool incluirInativos = true;
-
-    private NovoAtivoModel novoAtivo = new();
-    private bool salvandoNovo;
-    private string? erroCadastro;
-    private string? mensagemCadastro;
-
-    private int? edicaoId;
-    private string nomeEdicao = string.Empty;
-    private TipoAtivo tipoEdicao;
-    private bool salvandoEdicao;
-
-    protected override async Task OnInitializedAsync() => await CarregarAsync();
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        var salvo = await Js.InvokeAsync<string?>("walPreferencias.obter", CoresSeries.ChaveTaxaIpcaMais);
+        taxaIpcaMais = CoresSeries.LerTaxaIpcaMais(salvo) * 100;
+        StateHasChanged();
+    }
 
     private async Task CarregarAsync()
     {
-        await cargaLock.WaitAsync();
-        carregandoLista = true;
-        erroLista = null;
         try
         {
-            ativos = await AtivoService.ListarAsync(busca, incluirInativos);
+            ativos = (await AtivoService.ObterRastreadosAsync()).OrderBy(a => a.Ticker).ToList();
+            indices = await ScopedServices.GetRequiredService<IIndicesReferenciaService>().ObterSituacaoAsync();
         }
         finally
         {
-            carregandoLista = false;
-            cargaLock.Release();
+            carregando = false;
         }
     }
 
-    private async Task OnBuscaKeyDown(KeyboardEventArgs e)
+    private IEnumerable<AtivoRastreadoResponse> Visiveis()
     {
-        if (e.Key == "Enter") await CarregarAsync();
+        var termo = busca?.Trim();
+        return ativos.Where(a => Passa(a, filtro))
+            .Where(a => string.IsNullOrEmpty(termo)
+                || a.Ticker.Contains(termo, StringComparison.OrdinalIgnoreCase)
+                || a.Nome.Contains(termo, StringComparison.OrdinalIgnoreCase));
     }
 
-    private void OnTickerChanged(string valor) =>
-        novoAtivo.Ticker = (valor ?? string.Empty).Trim().ToUpperInvariant();
-
-    private async Task OnTipoAlteradoAsync()
+    private static bool Passa(AtivoRastreadoResponse a, Filtro f) => f switch
     {
-        if (novoAtivo.Tipo != TipoAtivo.Tesouro || titulosTesouro is not null) return;
+        Filtro.NaCarteira => a.Situacao == SituacaoNaCarteira.Aberta,
+        Filtro.Encerrados => a.Situacao == SituacaoNaCarteira.Encerrada,
+        Filtro.SemTransacoes => a.Situacao == SituacaoNaCarteira.SemTransacoes,
+        Filtro.Desatualizados => a.Rastreando && a.Saude == SaudeCotacoes.Desatualizada,
+        Filtro.Pausados => !a.Rastreando,
+        _ => true
+    };
 
-        carregandoTitulos = true;
-        erroTitulos = null;
+    private static string NomeFiltro(Filtro f) => f switch
+    {
+        Filtro.NaCarteira => "Na carteira",
+        Filtro.Encerrados => "Encerrados",
+        Filtro.SemTransacoes => "Sem transações",
+        Filtro.Desatualizados => "Desatualizados",
+        Filtro.Pausados => "Pausados",
+        _ => "Todos"
+    };
+
+    // Ícone + texto: o estado nunca depende só da cor
+    private static RenderFragment Selo(string classe, string icone, string texto, string? dica = null) => __builder =>
+    {
+        <span class="@($"wal-saude {classe}")" title="@dica"><MudIcon Icon="@icone" Size="Size.Small" />@texto</span>
+    };
+
+    private static RenderFragment Saude(AtivoRastreadoResponse a) => !a.Rastreando
+        ? Selo("wal-saude-pausado", Icons.Material.Outlined.PauseCircle, "Pausado", "Não busca dados novos")
+        : a.Saude switch
+        {
+            SaudeCotacoes.EmDia => Selo("wal-saude-ok", Icons.Material.Outlined.CheckCircle, "Em dia"),
+            SaudeCotacoes.Desatualizada => Selo("wal-saude-atraso", Icons.Material.Outlined.Warning, "Desatualizado",
+                "A fonte parou de mandar cotações. Se o ativo saiu da bolsa, pause o rastreamento."),
+            _ => Selo("wal-saude-sem", Icons.Material.Outlined.HourglassEmpty, "Sem cotação", "Recém-cadastrado ou ticker não encontrado na fonte")
+        };
+
+    private static RenderFragment SaudeIndice(SituacaoIndiceResponse i, bool mensal)
+    {
+        if (i.UltimaData is not DateOnly ultima)
+            return Selo("wal-saude-sem", Icons.Material.Outlined.HourglassEmpty, "Sem dados", "Rode Sincronizar índices");
+        // O IPCA sai por volta do dia 10 do mês seguinte: até ~70 dias de defasagem é normal
+        var limite = DateOnly.FromDateTime(DateTime.Today).AddDays(mensal ? -70 : -5);
+        return ultima >= limite
+            ? Selo("wal-saude-ok", Icons.Material.Outlined.CheckCircle, "Em dia")
+            : Selo("wal-saude-atraso", Icons.Material.Outlined.Warning, "Desatualizado");
+    }
+
+    private static string Pontos(decimal v) => v.ToString("N0", Formatacao.PtBR) + " pts";
+
+    // CDI e IPCA ficam guardados como fração (0,00055 ao dia; 0,0048 no mês)
+    private static InfoIndice Info(IndiceReferencia indice) => indice switch
+    {
+        IndiceReferencia.CDI => new("CDI", "Taxa DI, anualizada em 252 dias úteis", "Banco Central", false,
+            v => $"{((decimal)Math.Pow(1 + (double)v, 252) - 1).ToString("P2", Formatacao.PtBR)} a.a."),
+        IndiceReferencia.IPCA => new("IPCA", "Inflação oficial", "Banco Central", true,
+            v => $"{v.ToString("P2", Formatacao.PtBR)} no mês"),
+        IndiceReferencia.IBOV => new("IBOV", "Ibovespa", "Yahoo Finance", false, Pontos),
+        IndiceReferencia.IDIV => new("IDIV", "Aproximado pelo DIVO11 com proventos", "Yahoo Finance", false, v => Formatacao.Moeda(v)),
+        IndiceReferencia.SP500 => new("S&P 500", "Em dólar; convertido pela PTAX", "Yahoo Finance", false, Pontos),
+        IndiceReferencia.PTAX => new("PTAX", "Dólar de venda", "Banco Central", false, v => Formatacao.Moeda(v)),
+        _ => new(indice.ToString(), "", "", false, v => v.ToString("N2", Formatacao.PtBR))
+    };
+
+    private async Task AbrirDialogoAsync(AtivoRastreadoResponse? ativo)
+    {
+        var parametros = new DialogParameters<DialogAtivo> { { d => d.Editando, ativo } };
+        var dialogo = await Dialogos.ShowAsync<DialogAtivo>(null, parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        var resultado = await dialogo.Result;
+        if (resultado is not { Canceled: false, Data: string ticker }) return;
+
+        Snackbar.Add(ativo is null
+            ? $"{ticker} cadastrado. O histórico está sendo baixado em segundo plano."
+            : $"{ticker} atualizado.", Severity.Success);
+        await CarregarAsync();
+    }
+
+    private async Task DefinirRastreamentoAsync(AtivoRastreadoResponse a, bool rastrear)
+    {
+        if (!rastrear && a.Situacao == SituacaoNaCarteira.Aberta)
+        {
+            var confirmado = await Dialogos.ShowMessageBoxAsync(
+                $"Pausar {a.Ticker}?",
+                "Ele está na carteira: sem cotações novas, o valor dele fica parado na última cotação e proventos novos não chegam.",
+                yesText: "Pausar", cancelText: "Cancelar");
+            if (confirmado != true) return;
+        }
+
+        alterando = a.Id;
         try
         {
-            // Pode baixar o arquivo do Tesouro (se o salvo tiver 5h ou mais), o que leva alguns segundos
-            titulosTesouro = await TesouroDireto.ListarTitulosAsync();
-            if (titulosTesouro.Count == 0)
+            var resultado = await AtivoService.DefinirRastreamentoAsync(a.Id, rastrear);
+            if (!resultado.Sucesso)
             {
-                erroTitulos = "A lista de títulos do Tesouro está indisponível agora (o arquivo de preços não pôde ser baixado). Tente mais tarde.";
-                titulosTesouro = null; // tenta de novo na próxima vez que o tipo for escolhido
+                Snackbar.Add(resultado.Erro ?? "Não foi possível alterar.", Severity.Error);
+                return;
             }
-        }
-        catch (Exception)
-        {
-            erroTitulos = "Não foi possível ler a lista de títulos do Tesouro. Tente mais tarde.";
-            titulosTesouro = null;
-        }
-        finally
-        {
-            carregandoTitulos = false;
-        }
-    }
-
-    private void OnFiltroCategoriaAlterado()
-    {
-        // O título escolhido pode não ser da nova categoria
-        if (novoAtivo.TituloSelecionado is { } sel && filtroCategoria != string.Empty && sel.Categoria != filtroCategoria)
-        {
-            novoAtivo.TituloSelecionado = null;
-            novoAtivo.BuscaTitulo = string.Empty;
-        }
-    }
-
-    // O campo de busca é texto livre com sugestões; o título só conta como escolhido quando o texto
-    // é exatamente uma das sugestões
-    private void SelecionarTituloPelaBusca() =>
-        novoAtivo.TituloSelecionado = TitulosFiltrados.FirstOrDefault(t => RotuloTitulo(t) == novoAtivo.BuscaTitulo);
-
-    private async Task CadastrarAsync()
-    {
-        salvandoNovo = true;
-        erroCadastro = null;
-        mensagemCadastro = null;
-        try
-        {
-            var titulo = novoAtivo.TituloSelecionado;
-            var request = novoAtivo.Tipo == TipoAtivo.Tesouro && titulo is not null
-                ? new CriarAtivoRequest(titulo.Ticker, titulo.Nome, TipoAtivo.Tesouro, titulo.TipoTitulo, titulo.Vencimento)
-                : new CriarAtivoRequest(novoAtivo.Ticker, novoAtivo.Nome, novoAtivo.Tipo);
-            var resultado = await AtivoService.CriarAsync(request);
-            if (resultado.Sucesso)
-            {
-                mensagemCadastro = novoAtivo.Tipo == TipoAtivo.Tesouro
-                    ? $"Título {resultado.Valor!.Nome} cadastrado como {resultado.Valor.Ticker}. O histórico de preços está sendo carregado em segundo plano."
-                    : $"Ativo {resultado.Valor!.Ticker} cadastrado. A busca do histórico de cotações e proventos foi iniciada em segundo plano.";
-                // Mantém o tipo escolhido, para cadastrar vários títulos em sequência
-                novoAtivo = new NovoAtivoModel { Tipo = novoAtivo.Tipo };
-                await CarregarAsync();
-            }
-            else
-            {
-                erroCadastro = resultado.Erro;
-            }
-        }
-        finally
-        {
-            salvandoNovo = false;
-        }
-    }
-
-    private void IniciarEdicao(AtivoResponse ativo)
-    {
-        edicaoId = ativo.Id;
-        nomeEdicao = ativo.Nome;
-        tipoEdicao = ativo.Tipo;
-    }
-
-    private void CancelarEdicao() => edicaoId = null;
-
-    private async Task SalvarEdicaoAsync(int id)
-    {
-        salvandoEdicao = true;
-        erroLista = null;
-        try
-        {
-            var resultado = await AtivoService.EditarAsync(id, new EditarAtivoRequest(nomeEdicao, tipoEdicao));
-            if (resultado.Sucesso)
-            {
-                edicaoId = null;
-                await CarregarAsync();
-            }
-            else
-            {
-                erroLista = resultado.Erro;
-            }
-        }
-        finally
-        {
-            salvandoEdicao = false;
-        }
-    }
-
-    private async Task DesativarAsync(AtivoResponse ativo)
-    {
-        var confirmado = await JsRuntime.InvokeAsync<bool>("confirm", $"Desativar o ativo {ativo.Ticker}?");
-        if (!confirmado) return;
-
-        erroLista = null;
-        var resultado = await AtivoService.ExcluirAsync(ativo.Id);
-        if (resultado.Sucesso)
-        {
+            Snackbar.Add(rastrear ? $"{a.Ticker} volta a ser atualizado na próxima sincronização." : $"{a.Ticker} pausado.", Severity.Normal);
             await CarregarAsync();
         }
-        else
+        finally
         {
-            erroLista = resultado.Erro;
+            alterando = null;
         }
     }
 
-    private async Task ReativarAsync(AtivoResponse ativo)
+    private async Task PausarDesatualizadosAsync()
     {
-        erroLista = null;
-        var resultado = await AtivoService.ReativarAsync(ativo.Id);
-        if (resultado.Sucesso)
-            await CarregarAsync();
-        else
-            erroLista = resultado.Erro;
+        var alvos = Desatualizados;
+        var naCarteira = alvos.Count(a => a.Situacao == SituacaoNaCarteira.Aberta);
+        var confirmado = await Dialogos.ShowMessageBoxAsync(
+            $"Pausar {alvos.Count} {(alvos.Count == 1 ? "ativo" : "ativos")}?",
+            string.Join(", ", alvos.Select(a => a.Ticker))
+                + (naCarteira > 0 ? $". {naCarteira} ainda {(naCarteira == 1 ? "está" : "estão")} na carteira e o valor fica parado na última cotação." : "."),
+            yesText: "Pausar", cancelText: "Cancelar");
+        if (confirmado != true) return;
+
+        foreach (var a in alvos)
+            await AtivoService.DefinirRastreamentoAsync(a.Id, false);
+        Snackbar.Add($"{alvos.Count} {(alvos.Count == 1 ? "ativo pausado" : "ativos pausados")}.", Severity.Normal);
+        await CarregarAsync();
     }
 
-    // As regras dependem do tipo (Tesouro não tem ticker nem nome digitados), por isso a validação
-    // fica em Validate e não em atributos por campo
-    private class NovoAtivoModel : IValidatableObject
+    private void RecarregarHistorico(AtivoRastreadoResponse a)
     {
-        // Mesmo regex do AtivoService (backend)
-        private static readonly System.Text.RegularExpressions.Regex TickerB3 = new(@"^[A-Z][A-Z0-9]{3}\d{1,2}$");
+        Jobs.EnfileirarCargaHistoricaInicial(a.Id);
+        Snackbar.Add($"Baixando o histórico de {a.Ticker} em segundo plano.", Severity.Normal);
+    }
 
-        public string Ticker { get; set; } = string.Empty;
-        public string Nome { get; set; } = string.Empty;
-        public TipoAtivo Tipo { get; set; } = TipoAtivo.Acao;
+    private void SincronizarTudo()
+    {
+        Jobs.EnfileirarSincronizacaoGeral();
+        Snackbar.Add("Sincronização iniciada em segundo plano. Recarregue a página em alguns minutos.", Severity.Normal);
+    }
 
-        // Tesouro: texto digitado na busca e o título correspondente da lista
-        public string BuscaTitulo { get; set; } = string.Empty;
-        public TituloTesouroResponse? TituloSelecionado { get; set; }
+    private void SincronizarIndices()
+    {
+        Jobs.EnfileirarSincronizacaoIndices();
+        Snackbar.Add("Atualizando os índices em segundo plano.", Severity.Normal);
+    }
 
-        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
-        {
-            if (Tipo == TipoAtivo.Tesouro)
-            {
-                if (TituloSelecionado is null)
-                    yield return new ValidationResult("Selecione um título da lista.", [nameof(BuscaTitulo)]);
-                yield break;
-            }
+    private async Task TrocarTaxaIpcaMaisAsync(decimal pontos)
+    {
+        taxaIpcaMais = Math.Clamp(pontos, 0, 20);
+        await Js.InvokeVoidAsync("walPreferencias.definir", CoresSeries.ChaveTaxaIpcaMais, CoresSeries.GravarTaxaIpcaMais(taxaIpcaMais / 100));
+    }
 
-            if (string.IsNullOrWhiteSpace(Ticker))
-                yield return new ValidationResult("Informe o ticker.", [nameof(Ticker)]);
-            else if (!TickerB3.IsMatch(Ticker))
-                yield return new ValidationResult(
-                    "Ticker deve seguir o formato B3: 4 caracteres iniciando por letra + 1-2 dígitos (ex: PETR4, HGLG11, B5P211).",
-                    [nameof(Ticker)]);
+    private void AoMudarPreferencias() => InvokeAsync(StateHasChanged);
 
-            if (string.IsNullOrWhiteSpace(Nome))
-                yield return new ValidationResult("Informe o nome.", [nameof(Nome)]);
-        }
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        Preferencias.Mudou -= AoMudarPreferencias;
+        await base.DisposeAsyncCore();
     }
 }

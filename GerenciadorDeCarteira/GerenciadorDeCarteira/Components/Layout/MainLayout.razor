@@ -3,6 +3,8 @@
 @inject PreferenciasExibicao Preferencias
 @inject NotificacoesCarteira Notificacoes
 @inject IServiceScopeFactory ScopeFactory
+@inject PainelTransacaoEstado PainelEstado
+@inject IHttpContextAccessor HttpContextAccessor
 
 <MudThemeProvider Theme="TemaWal.Tema" IsDarkMode="Preferencias.TemaEscuro" />
 <MudPopoverProvider />
@@ -71,7 +73,7 @@
                                Disabled="!Preferencias.Carregada"
                                OnClick="Preferencias.AlternarTemaAsync" />
             </MudTooltip>
-            <MudButton Href="transacoes" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false"
+            <MudButton OnClick="() => PainelEstado.Nova()" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false"
                        StartIcon="@Icons.Material.Filled.Add">Transação</MudButton>
         </div>
     </MudAppBar>
@@ -90,6 +92,8 @@
             @Body
         </div>
     </MudMainContent>
+
+    <PainelTransacao />
 </MudLayout>
 
 <div id="blazor-error-ui" data-nosnippet>
@@ -104,8 +108,14 @@
     private bool menuAberto = true;
     private CabecalhoCarteiraResponse? cabecalho;
 
+    /// <summary>Lido dos cookies na pré-renderização e restaurado no circuito interativo.</summary>
+    [PersistentState]
+    public PreferenciasIniciais? Iniciais { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
+        Iniciais ??= PreferenciasIniciais.DosCookies(HttpContextAccessor.HttpContext?.Request.Cookies);
+        if (Iniciais is not null) Preferencias.DefinirIniciais(Iniciais);
         Preferencias.Mudou += AoMudar;
         Notificacoes.CarteiraAlterada += AoAlterarCarteira;
         await CarregarCabecalhoAsync();

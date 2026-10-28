@@ -1,0 +1,224 @@
+@* Painel lateral de nova transação ou edição, aberto de qualquer tela (PainelTransacaoEstado). Salvar avisa as telas (NotificacoesCarteira). *@
+@implements IDisposable
+@inject PainelTransacaoEstado Estado
+@inject NotificacoesCarteira Notificacoes
+@inject PreferenciasExibicao Preferencias
+@inject IServiceScopeFactory ScopeFactory
+@inject ISnackbar Snackbar
+
+<MudDrawer @bind-Open="aberto" Anchor="Anchor.End" Variant="DrawerVariant.Temporary" Width="440px" Elevation="4"
+           OverlayAutoClose="true" Class="wal-painel-transacao" aria-labelledby="titulo-transacao">
+    <div class="wal-painel-cabecalho">
+        <h2 id="titulo-transacao" class="wal-card-titulo">@(editandoId is null ? "Nova transação" : "Editar transação")</h2>
+        <MudIconButton Icon="@Icons.Material.Filled.Close" aria-label="Fechar" OnClick="Fechar" />
+    </div>
+
+    <div class="wal-painel-corpo">
+        <MudToggleGroup T="TipoMovimentacao" @bind-Value="tipo" @bind-Value:after="AtualizarContextoAsync" Outlined="true"
+                        Delimiters="true" Color="Color.Primary" Class="wal-tipo-transacao" aria-label="Tipo">
+            <MudToggleItem T="TipoMovimentacao" Value="TipoMovimentacao.Compra"><span class="wal-simbolo" aria-hidden="true">▲</span>Compra</MudToggleItem>
+            <MudToggleItem T="TipoMovimentacao" Value="TipoMovimentacao.Venda"><span class="wal-simbolo" aria-hidden="true">▼</span>Venda</MudToggleItem>
+        </MudToggleGroup>
+
+        <MudAutocomplete T="AtivoResponse" @bind-Value="ativo" @bind-Value:after="AtualizarContextoAsync" Label="Ativo"
+                         SearchFunc="BuscarAtivos" ToStringFunc="@(a => a is null ? "" : $"{a.Ticker} — {a.Nome}")"
+                         Variant="Variant.Outlined" Disabled="@(editandoId is not null)" ResetValueOnEmptyText="true"
+                         CoerceText="true" MaxItems="12" Clearable="true" Required="true" RequiredError="Escolha o ativo" />
+        @if (fechamento is not null)
+        {
+            <div class="wal-ajuda">
+                Fechamento em @fechamento.Data.ToString("dd/MM/yyyy"): @Formatacao.Moeda(fechamento.Fechamento)
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="() => preco = fechamento.Fechamento">Usar</MudButton>
+            </div>
+        }
+
+        <MudDatePicker @bind-Date="data" @bind-Date:after="AtualizarContextoAsync" Label="Data" Variant="Variant.Outlined"
+                       DateFormat="dd/MM/yyyy" Culture="@Formatacao.PtBR" MaxDate="DateTime.Today" Required="true" />
+
+        <div class="wal-formulario-linha">
+            <div>
+                @* Formato sem casas sobrando: 1.500 ações, 9,39 títulos do Tesouro *@
+                <MudNumericField T="decimal?" @bind-Value="quantidade" Label="Quantidade" Variant="Variant.Outlined" Min="0"
+                                 Culture="@Formatacao.PtBR" Format="#,##0.########" Immediate="true" HideSpinButtons="true" />
+                @if (tipo == TipoMovimentacao.Venda && disponivel is decimal d)
+                {
+                    <div class="wal-ajuda">
+                        Disponível: @(Preferencias.Mascarar ? "•••" : Formatacao.QuantidadeCurta(d))
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="() => quantidade = d">Tudo</MudButton>
+                    </div>
+                }
+            </div>
+            <MudNumericField T="decimal?" @bind-Value="preco" Label="Preço unitário" Variant="Variant.Outlined" Min="0"
+                             Culture="@Formatacao.PtBR" Immediate="true" HideSpinButtons="true" Adornment="Adornment.Start" AdornmentText="R$" />
+        </div>
+        <MudNumericField T="decimal" @bind-Value="taxas" Label="Taxas" Variant="Variant.Outlined" Min="0"
+                         Culture="@Formatacao.PtBR" Immediate="true" HideSpinButtons="true" Adornment="Adornment.Start" AdornmentText="R$" />
+
+        <div class="wal-total-transacao">
+            <span class="wal-k">@(tipo == TipoMovimentacao.Compra ? "Total a pagar" : "Total a receber")</span>
+            <span class="wal-total-valor">@Formatacao.Moeda(Total)</span>
+        </div>
+        @if (tipo == TipoMovimentacao.Venda && precoMedio is decimal pm && pm > 0 && quantidade is > 0 && preco is > 0)
+        {
+            var resultado = quantidade.Value * (preco.Value - pm) - taxas;
+            <div class="wal-ajuda">
+                Preço médio @Formatacao.Moeda(pm) · resultado estimado
+                <span class="wal-forte @Formatacao.CorGanhoPerda(resultado)">@Formatacao.MoedaComSinal(resultado, Preferencias.Mascarar)</span>
+            </div>
+        }
+
+        @if (erro is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true">@erro</MudAlert>
+        }
+    </div>
+
+    <div class="wal-painel-rodape">
+        <MudButton Variant="Variant.Text" OnClick="Fechar">Cancelar</MudButton>
+        @if (editandoId is null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="salvando" OnClick="() => SalvarAsync(continuar: true)">Salvar e adicionar outra</MudButton>
+        }
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" DropShadow="false" Disabled="salvando" OnClick="() => SalvarAsync(continuar: false)">Salvar</MudButton>
+    </div>
+</MudDrawer>
+
+@code {
+    private bool aberto;
+    private int? editandoId;
+    private TipoMovimentacao tipo = TipoMovimentacao.Compra;
+    private AtivoResponse? ativo;
+    private DateTime? data = DateTime.Today;
+    private decimal? quantidade;
+    private decimal? preco;
+    private decimal taxas;
+    private string? erro;
+    private bool salvando;
+    private List<AtivoResponse> ativos = [];
+    private CotacaoResponse? fechamento;
+    private decimal? disponivel;
+    private decimal? precoMedio;
+
+    private decimal Total => (quantidade ?? 0) * (preco ?? 0) + (tipo == TipoMovimentacao.Compra ? taxas : -taxas);
+
+    protected override void OnInitialized() => Estado.AbrirSolicitado += AoSolicitar;
+
+    private void AoSolicitar(PainelTransacaoEstado.Pedido pedido) => InvokeAsync(async () =>
+    {
+        await PrepararAsync(pedido);
+        aberto = true;
+        StateHasChanged();
+    });
+
+    private async Task PrepararAsync(PainelTransacaoEstado.Pedido pedido)
+    {
+        erro = null;
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        // Só ativos rastreados recebem transação nova (os pausados não têm cotação atualizada)
+        ativos = (await scope.ServiceProvider.GetRequiredService<IAtivoService>().ListarAsync(incluirInativos: pedido.MovimentacaoId is not null))
+            .OrderBy(a => a.Ticker).ToList();
+
+        if (pedido.MovimentacaoId is int id)
+        {
+            var mov = (await scope.ServiceProvider.GetRequiredService<IMovimentacaoService>().ListarAsync())
+                .FirstOrDefault(m => m.Id == id);
+            if (mov is null)
+            {
+                Snackbar.Add("Transação não encontrada.", Severity.Error);
+                return;
+            }
+            editandoId = id;
+            tipo = mov.Tipo;
+            ativo = ativos.FirstOrDefault(a => a.Id == mov.AtivoId);
+            data = mov.Data.ToDateTime(TimeOnly.MinValue);
+            quantidade = mov.Quantidade;
+            preco = mov.PrecoUnitario;
+            taxas = mov.Taxas;
+        }
+        else
+        {
+            editandoId = null;
+            tipo = TipoMovimentacao.Compra;
+            ativo = pedido.AtivoId is int ativoId ? ativos.FirstOrDefault(a => a.Id == ativoId) : null;
+            data = DateTime.Today;
+            quantidade = null;
+            preco = null;
+            taxas = 0;
+        }
+        await AtualizarContextoAsync();
+    }
+
+    private Task<IEnumerable<AtivoResponse>> BuscarAtivos(string? texto, CancellationToken _) =>
+        Task.FromResult(string.IsNullOrWhiteSpace(texto)
+            ? ativos.AsEnumerable()
+            : ativos.Where(a => a.Ticker.Contains(texto.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                                a.Nome.Contains(texto.Trim(), StringComparison.OrdinalIgnoreCase)));
+
+    // Fechamento da data (sugestão de preço), quantidade disponível e preço médio na data (para a venda)
+    private async Task AtualizarContextoAsync()
+    {
+        fechamento = null;
+        disponivel = null;
+        precoMedio = null;
+        if (ativo is null || data is null) return;
+
+        var dia = DateOnly.FromDateTime(data.Value);
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        fechamento = await scope.ServiceProvider.GetRequiredService<IAtivoService>().ObterCotacaoAteAsync(ativo.Id, dia);
+        var posicao = await scope.ServiceProvider.GetRequiredService<IPosicaoService>()
+            .CalcularPosicaoAsync(ativo.Id, dia, excluirMovimentacaoId: editandoId);
+        disponivel = posicao.Quantidade;
+        precoMedio = posicao.PrecoMedio;
+    }
+
+    private async Task SalvarAsync(bool continuar)
+    {
+        erro = ativo is null ? "Escolha o ativo."
+            : data is null ? "Informe a data."
+            : quantidade is not > 0 ? "Informe a quantidade."
+            : preco is not > 0 ? "Informe o preço unitário."
+            : null;
+        if (erro is not null) return;
+
+        salvando = true;
+        try
+        {
+            var dia = DateOnly.FromDateTime(data!.Value);
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            var servico = scope.ServiceProvider.GetRequiredService<IMovimentacaoService>();
+            var resultado = editandoId is int id
+                ? await servico.EditarAsync(id, new EditarMovimentacaoRequest(tipo, dia, quantidade!.Value, preco!.Value, taxas))
+                : await servico.CriarAsync(new CriarMovimentacaoRequest(ativo!.Id, tipo, dia, quantidade!.Value, preco!.Value, taxas));
+
+            if (!resultado.Sucesso)
+            {
+                erro = resultado.Erro;
+                return;
+            }
+
+            Snackbar.Add($"{(tipo == TipoMovimentacao.Compra ? "Compra" : "Venda")} de {ativo!.Ticker} {(editandoId is null ? "registrada" : "atualizada")}.", Severity.Success);
+            Notificacoes.NotificarAlteracao();
+
+            if (continuar)
+            {
+                // Mesmo ativo, tipo e data: lançar uma nota com várias ordens fica rápido
+                quantidade = null;
+                preco = null;
+                taxas = 0;
+                await AtualizarContextoAsync();
+            }
+            else
+            {
+                aberto = false;
+            }
+        }
+        finally
+        {
+            salvando = false;
+        }
+    }
+
+    private void Fechar() => aberto = false;
+
+    public void Dispose() => Estado.AbrirSolicitado -= AoSolicitar;
+}

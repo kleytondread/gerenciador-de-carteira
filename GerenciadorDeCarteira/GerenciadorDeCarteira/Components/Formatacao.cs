@@ -36,8 +36,8 @@ public static class Formatacao
 
     public static string CorGanhoPerda(decimal? valor) => valor switch
     {
-        > 0 => "text-success",
-        < 0 => "text-danger",
+        > 0 => "wal-ganho",
+        < 0 => "wal-perda",
         _ => string.Empty
     };
 

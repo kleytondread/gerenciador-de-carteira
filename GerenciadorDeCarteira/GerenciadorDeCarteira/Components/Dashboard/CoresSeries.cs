@@ -1,3 +1,4 @@
+using System.Globalization;
 using Wal.Domain.Enums;
 using Wal.Services.Dtos;
 
@@ -13,8 +14,19 @@ public static class CoresSeries
     public const string ValorAplicado = "#52514e";
     public const string Queda = "#c5221f";
 
-    /// <summary>Taxa real do benchmark IPCA + X% até a tela de índices permitir escolher (Fase 6).</summary>
-    public const decimal TaxaIpcaMais = 0.06m;
+    /// <summary>Taxa real do IPCA + X% quando o usuário não escolheu outra (em Ativos rastreados › Índices).</summary>
+    public const decimal TaxaIpcaMaisPadrao = 0.06m;
+
+    /// <summary>Chave do localStorage com a taxa em pontos percentuais, formato invariante ("6", "5.5").</summary>
+    public const string ChaveTaxaIpcaMais = "wal-ipca-mais";
+
+    /// <summary>Taxa salva no navegador (0,06 = 6% a.a.); ausente ou fora de 0–20% volta ao padrão.</summary>
+    public static decimal LerTaxaIpcaMais(string? salvo) =>
+        decimal.TryParse(salvo, NumberStyles.Number, CultureInfo.InvariantCulture, out var pontos) && pontos is >= 0 and <= 20
+            ? pontos / 100
+            : TaxaIpcaMaisPadrao;
+
+    public static string GravarTaxaIpcaMais(decimal taxa) => (taxa * 100).ToString("0.##", CultureInfo.InvariantCulture);
 
     public static readonly Benchmark[] Benchmarks =
         [Benchmark.CDI, Benchmark.IBOV, Benchmark.IPCA, Benchmark.IDIV, Benchmark.SP500, Benchmark.IpcaMais];
@@ -29,10 +41,10 @@ public static class CoresSeries
         _ => "#6250d6"
     };
 
-    public static string Nome(Benchmark benchmark) => benchmark switch
+    public static string Nome(Benchmark benchmark, decimal taxaIpcaMais = TaxaIpcaMaisPadrao) => benchmark switch
     {
         Benchmark.SP500 => "S&P 500",
-        Benchmark.IpcaMais => $"IPCA + {(TaxaIpcaMais * 100).ToString("0.##", Formatacao.PtBR)}%",
+        Benchmark.IpcaMais => $"IPCA + {(taxaIpcaMais * 100).ToString("0.##", Formatacao.PtBR)}%",
         _ => benchmark.ToString()
     };
 

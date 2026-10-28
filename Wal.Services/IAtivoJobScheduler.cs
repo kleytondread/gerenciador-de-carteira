@@ -7,4 +7,10 @@ public interface IAtivoJobScheduler
     /// Fire-and-forget: quem chama não aguarda o job terminar.
     /// </summary>
     string EnfileirarCargaHistoricaInicial(int ativoId);
+
+    /// <summary>Roda agora a sincronização diária: ativos rastreados (Yahoo), títulos do Tesouro e índices.</summary>
+    void EnfileirarSincronizacaoGeral();
+
+    /// <summary>Roda agora só a atualização dos índices de referência (CDI, IPCA, IBOV...).</summary>
+    void EnfileirarSincronizacaoIndices();
 }

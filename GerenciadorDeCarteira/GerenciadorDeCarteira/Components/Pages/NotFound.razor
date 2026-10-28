@@ -1,7 +1,11 @@
-﻿@page "/not-found"
+@page "/not-found"
 @layout MainLayout
 
 <PageTitle>Página não encontrada - Gestor de Carteira B3</PageTitle>
+<SectionContent SectionName="@TituloPagina.Secao">Página não encontrada</SectionContent>
 
-<h3>Página não encontrada</h3>
-<p>O conteúdo que você procura não existe. <a href="">Voltar à carteira</a></p>
+<MudPaper Outlined="true" Class="pa-8 d-flex flex-column align-center gap-3">
+    <MudIcon Icon="@Icons.Material.Outlined.SearchOff" Size="Size.Large" />
+    <MudText Typo="Typo.h6">Este endereço não existe</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" DropShadow="false" Href="">Ir para o Dashboard</MudButton>
+</MudPaper>

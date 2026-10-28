@@ -38,7 +38,7 @@
                     <th scope="row" title="Rentabilidade da carteira ÷ rentabilidade do CDI no mesmo período">% do CDI</th>
                     @foreach (var p in periodos)
                     {
-                        <td class="wal-num @(p.PercentualCdi >= 1 ? "text-success" : "")">@(p.PercentualCdi is decimal pc ? Formatacao.PercentualSimples(pc, 0) : "–")</td>
+                        <td class="wal-num @(p.PercentualCdi >= 1 ? "wal-ganho" : "")">@(p.PercentualCdi is decimal pc ? Formatacao.PercentualSimples(pc, 0) : "–")</td>
                     }
                 </tr>
                 <tr>
@@ -59,7 +59,7 @@
                     <th scope="row" title="Maior queda a partir de um pico dentro do período">Drawdown máx.</th>
                     @foreach (var p in periodos)
                     {
-                        <td class="wal-num @(p.DrawdownMaximo < 0 ? "text-danger" : "")">@Formatacao.Percentual(p.DrawdownMaximo)</td>
+                        <td class="wal-num @(p.DrawdownMaximo < 0 ? "wal-perda" : "")">@Formatacao.Percentual(p.DrawdownMaximo)</td>
                     }
                 </tr>
             </tbody>

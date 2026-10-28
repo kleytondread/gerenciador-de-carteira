@@ -18,7 +18,7 @@ public partial class AtivoService(
 {
     // Formato B3: raiz de 4 caracteres (começa com letra; os demais podem ser letra ou dígito)
     // + 1 ou 2 dígitos. Ex: PETR4, HGLG11 e ETFs com dígito na raiz, como B5P211 (raiz B5P2 + 11).
-    // Manter igual ao [RegularExpression] do formulário em Components/Pages/Ativos.razor.
+    // A tela de Ativos rastreados mostra a mensagem de erro daqui, sem validar o formato por conta própria.
     [GeneratedRegex(@"^[A-Z][A-Z0-9]{3}\d{1,2}$")]
     private static partial Regex TickerRegex();
 
@@ -193,6 +193,69 @@ public partial class AtivoService(
 
         return ResultadoOperacao.Ok();
     }
+
+    // Folga para fim de semana e feriados prolongados antes de considerar as cotações de um ativo paradas
+    private const int DiasParaDesatualizar = 5;
+
+    public async Task<List<AtivoRastreadoResponse>> ObterRastreadosAsync()
+    {
+        var ativos = await db.Ativos.AsNoTracking().OrderBy(a => a.Ticker).ToListAsync();
+
+        var cotacoes = await db.CotacoesHistoricas.AsNoTracking()
+            .GroupBy(c => c.AtivoId)
+            .Select(g => new { AtivoId = g.Key, Primeira = g.Min(c => c.Data), Ultima = g.Max(c => c.Data) })
+            .ToDictionaryAsync(x => x.AtivoId);
+
+        var proventos = await db.Proventos.AsNoTracking()
+            .Where(p => !p.Oculto)
+            .GroupBy(p => p.AtivoId)
+            .Select(g => new { AtivoId = g.Key, Quantidade = g.Count() })
+            .ToDictionaryAsync(x => x.AtivoId, x => x.Quantidade);
+
+        // Decimal no SQLite é texto: a soma por ativo é feita em memória
+        var quantidades = (await db.Movimentacoes.AsNoTracking()
+                .Select(m => new { m.AtivoId, m.Tipo, m.Quantidade })
+                .ToListAsync())
+            .GroupBy(m => m.AtivoId)
+            .ToDictionary(g => g.Key, g => g.Sum(m => m.Tipo == TipoMovimentacao.Compra ? m.Quantidade : -m.Quantidade));
+
+        // Referência: o pregão mais recente entre todos os ativos (não "hoje", para um dia sem sincronizar
+        // não marcar tudo como desatualizado)
+        var referencia = cotacoes.Count > 0 ? cotacoes.Values.Max(c => c.Ultima) : (DateOnly?)null;
+
+        return ativos.Select(a =>
+        {
+            var c = cotacoes.GetValueOrDefault(a.Id);
+            var temTransacao = quantidades.TryGetValue(a.Id, out var quantidade);
+            var situacao = !temTransacao ? SituacaoNaCarteira.SemTransacoes
+                : quantidade > 0.000001m ? SituacaoNaCarteira.Aberta
+                : SituacaoNaCarteira.Encerrada;
+            var saude = c is null ? SaudeCotacoes.SemCotacao
+                : referencia is DateOnly r && c.Ultima < r.AddDays(-DiasParaDesatualizar) ? SaudeCotacoes.Desatualizada
+                : SaudeCotacoes.EmDia;
+            return new AtivoRastreadoResponse(
+                a.Id, a.Ticker, a.Nome, a.Tipo, a.EstaAtivo, situacao, temTransacao ? Math.Max(quantidade, 0) : 0,
+                c?.Primeira, c?.Ultima, proventos.GetValueOrDefault(a.Id), saude);
+        }).ToList();
+    }
+
+    public async Task<ResultadoOperacao> DefinirRastreamentoAsync(int id, bool rastrear)
+    {
+        var ativo = await db.Ativos.FindAsync(id);
+        if (ativo is null) return ResultadoOperacao.Falha("Ativo não encontrado.", TipoErroOperacao.NaoEncontrado);
+
+        ativo.EstaAtivo = rastrear;
+        await db.SaveChangesAsync();
+        logger.LogInformation("Rastreamento de {Ticker} {Estado}.", ativo.Ticker, rastrear ? "retomado" : "pausado");
+        return ResultadoOperacao.Ok();
+    }
+
+    public async Task<CotacaoResponse?> ObterCotacaoAteAsync(int ativoId, DateOnly data) =>
+        await db.CotacoesHistoricas.AsNoTracking()
+            .Where(c => c.AtivoId == ativoId && c.Data <= data)
+            .OrderByDescending(c => c.Data)
+            .Select(c => new CotacaoResponse(c.Data, c.Abertura, c.Maxima, c.Minima, c.Fechamento, c.Volume))
+            .FirstOrDefaultAsync();
 
     public async Task<ResultadoOperacao<List<CotacaoResponse>>> ObterCotacoesAsync(int ativoId, string? periodo)
     {

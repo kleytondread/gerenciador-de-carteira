@@ -1,37 +1,27 @@
-﻿@page "/Error"
+@page "/Error"
 @using System.Diagnostics
 @* Estática: lê o HttpContext, que não existe dentro do circuito interativo *@
 @attribute [ExcludeFromInteractiveRouting]
 
-<PageTitle>Error</PageTitle>
+<PageTitle>Erro - Gestor de Carteira B3</PageTitle>
+<SectionContent SectionName="@TituloPagina.Secao">Erro</SectionContent>
 
-<h1 class="text-danger">Error.</h1>
-<h2 class="text-danger">An error occurred while processing your request.</h2>
+<MudPaper Outlined="true" Class="pa-8 d-flex flex-column align-center gap-3">
+    <MudIcon Icon="@Icons.Material.Outlined.ErrorOutline" Color="Color.Error" Size="Size.Large" />
+    <MudText Typo="Typo.h6">Algo deu errado ao abrir esta página</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary">Os detalhes ficam no log da aplicação.</MudText>
+    @if (RequestId is not null)
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">Código: <code>@RequestId</code></MudText>
+    }
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" DropShadow="false" Href="">Ir para o Dashboard</MudButton>
+</MudPaper>
 
-@if (ShowRequestId)
-{
-    <p>
-        <strong>Request ID:</strong> <code>@RequestId</code>
-    </p>
-}
-
-<h3>Development Mode</h3>
-<p>
-    Swapping to <strong>Development</strong> environment will display more detailed information about the error that occurred.
-</p>
-<p>
-    <strong>The Development environment shouldn't be enabled for deployed applications.</strong>
-    It can result in displaying sensitive information from exceptions to end users.
-    For local debugging, enable the <strong>Development</strong> environment by setting the <strong>ASPNETCORE_ENVIRONMENT</strong> environment variable to <strong>Development</strong>
-    and restarting the app.
-</p>
-
-@code{
+@code {
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
 
     private string? RequestId { get; set; }
-    private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
 
     protected override void OnInitialized() =>
         RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;

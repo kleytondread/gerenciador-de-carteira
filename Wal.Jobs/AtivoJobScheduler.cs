@@ -11,4 +11,14 @@ public class AtivoJobScheduler(IBackgroundJobClient backgroundJobClient) : IAtiv
 {
     public string EnfileirarCargaHistoricaInicial(int ativoId)
         => backgroundJobClient.Enqueue<IDadosMercadoService>(s => s.CargaHistoricaCompletaAsync(ativoId));
+
+    public void EnfileirarSincronizacaoGeral()
+    {
+        backgroundJobClient.Enqueue<AtivoSyncJob>(j => j.SincronizarTodosAtivosAsync());
+        backgroundJobClient.Enqueue<TesouroSyncJob>(j => j.AtualizarAsync());
+        backgroundJobClient.Enqueue<IndiceSyncJob>(j => j.SincronizarAsync());
+    }
+
+    public void EnfileirarSincronizacaoIndices()
+        => backgroundJobClient.Enqueue<IndiceSyncJob>(j => j.SincronizarAsync());
 }

@@ -248,6 +248,26 @@ public class AnaliseCarteiraService(
             fim, proventos, Pagadores(motor, posicoes, ativos, fim.AddMonths(-12).AddDays(1), fim), eventos);
     }
 
+    public async Task<PainelTransacoesResponse> ObterPainelTransacoesAsync()
+    {
+        var motor = await MotorCarteira.CalcularAsync(db);
+        var tickers = await TickersAsync();
+
+        var transacoes = (await db.Movimentacoes.AsNoTracking().ToListAsync())
+            .OrderByDescending(m => m.Data).ThenByDescending(m => m.Id)
+            .Select(m => new MovimentacaoResponse(
+                m.Id, m.AtivoId, tickers.GetValueOrDefault(m.AtivoId, "?"), m.Tipo, m.Data, m.Quantidade, m.PrecoUnitario, m.Taxas))
+            .ToList();
+
+        // Do motor, e não das movimentações: ele já tira as bonificações e inclui a fração vendida em leilão
+        var fluxo = motor.Pontos
+            .GroupBy(p => new DateOnly(p.Data.Year, p.Data.Month, 1))
+            .Select(g => new FluxoMensalResponse(g.Key, g.Sum(p => p.Compras), g.Sum(p => p.Vendas)))
+            .ToList();
+
+        return new PainelTransacoesResponse(transacoes, fluxo, motor.Bonificacoes);
+    }
+
     private static List<PagadorProventosResponse> Pagadores(
         MotorCarteira motor, List<PosicaoDetalhadaResponse> abertas, IReadOnlyDictionary<int, Domain.Entities.Ativo> ativos,
         DateOnly inicio, DateOnly fim)

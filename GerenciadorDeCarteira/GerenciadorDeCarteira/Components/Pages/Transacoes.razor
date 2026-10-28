@@ -1,0 +1,291 @@
+@page "/transacoes"
+@page "/movimentacoes"
+@* DbContext próprio por página — ver comentário em Home.razor *@
+@inherits OwningComponentBase
+@inject PreferenciasExibicao Preferencias
+@inject NotificacoesCarteira Notificacoes
+@inject PainelTransacaoEstado PainelEstado
+@inject IDialogService Dialogos
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Transações - Gestor de Carteira B3</PageTitle>
+<SectionContent SectionName="@TituloPagina.Secao">Transações</SectionContent>
+
+@if (carregando)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Carregando transações" />
+}
+else if (painel is null || painel.Transacoes.Count == 0)
+{
+    <MudPaper Outlined="true" Class="pa-8 d-flex flex-column align-center gap-3">
+        <MudIcon Icon="@Icons.Material.Outlined.SwapVert" Size="Size.Large" />
+        <MudText Typo="Typo.h6">Nenhuma transação ainda</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" DropShadow="false" OnClick="() => PainelEstado.Nova()">Lançar a primeira compra</MudButton>
+    </MudPaper>
+}
+else
+{
+    <div class="wal-painel">
+        @* Aportes × vendas por mês (barras divergentes em HTML: compras para cima, vendas para baixo) *@
+        <CardPainel Titulo="Aportes e vendas" Class="wal-s12">
+            <Acoes>
+                <MudToggleGroup T="string" @bind-Value="periodo" Size="Size.Small" Outlined="true" Delimiters="true"
+                                Color="Color.Primary" aria-label="Período">
+                    @foreach (var p in Periodos)
+                    {
+                        <MudToggleItem T="string" Value="@p" Text="@p" />
+                    }
+                </MudToggleGroup>
+            </Acoes>
+            <ChildContent>
+                @{ var meses = MesesDoPeriodo(); var compras = meses.Sum(m => m.Compras); var vendas = meses.Sum(m => m.Vendas); }
+                <div class="wal-kpis-linha">
+                    <div class="wal-kv"><span class="wal-k"><span class="wal-quadrado" style="background:#2a78d6"></span>Compras</span><span class="wal-kpi-valor">@Formatacao.Moeda(compras, Mascarar)</span></div>
+                    <div class="wal-kv"><span class="wal-k"><span class="wal-quadrado" style="background:#eb6834"></span>Vendas</span><span class="wal-kpi-valor">@Formatacao.Moeda(vendas, Mascarar)</span></div>
+                    <div class="wal-kv"><span class="wal-k" title="Compras − vendas: dinheiro novo posto na carteira">Aporte líquido</span><span class="wal-kpi-valor @Formatacao.CorGanhoPerda(compras - vendas)">@Formatacao.MoedaComSinal(compras - vendas, Mascarar)</span></div>
+                    <div class="wal-kv"><span class="wal-k">Transações</span><span class="wal-kpi-valor">@TransacoesNoPeriodo(meses)</span></div>
+                </div>
+                @{ var maior = meses.Count > 0 ? Math.Max(meses.Max(m => m.Compras), meses.Max(m => m.Vendas)) : 0; }
+                <div class="wal-fluxo" role="img" aria-label="Compras e vendas por mês">
+                    @foreach (var (m, i) in meses.Select((m, i) => (m, i)))
+                    {
+                        <div class="wal-fluxo-mes" title="@($"{m.Mes.ToString("MMM/yyyy", Formatacao.PtBR)} — compras {Formatacao.Moeda(m.Compras, Mascarar)} · vendas {Formatacao.Moeda(m.Vendas, Mascarar)}")">
+                            <div class="wal-fluxo-cima"><span style="height:@Altura(m.Compras, maior)"></span></div>
+                            <div class="wal-fluxo-baixo"><span style="height:@Altura(m.Vendas, maior)"></span></div>
+                            <span class="wal-fluxo-rotulo">@RotuloMes(m.Mes, i, meses.Count)</span>
+                        </div>
+                    }
+                </div>
+            </ChildContent>
+        </CardPainel>
+
+        <CardPainel Titulo="Histórico" SemEspacamento="true" Class="wal-s12">
+            <Acoes>
+                @if (ativoFiltro is not null)
+                {
+                    <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" OnClose="LimparFiltroAtivo">Ativo: @ativoFiltro</MudChip>
+                }
+                <MudTextField T="string" @bind-Value="busca" Immediate="true" DebounceInterval="200" Placeholder="Buscar ativo"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Outlined.Search" Clearable="true" Class="wal-busca" aria-label="Buscar ativo" />
+                <MudChipSet T="TipoMovimentacao?" SelectionMode="SelectionMode.SingleSelection" @bind-SelectedValue="tipo"
+                            Size="Size.Small" Variant="Variant.Outlined" SelectedColor="Color.Primary" aria-label="Tipo">
+                    <MudChip T="TipoMovimentacao?" Value="@((TipoMovimentacao?)null)" Default="true">Todas</MudChip>
+                    <MudChip T="TipoMovimentacao?" Value="@((TipoMovimentacao?)TipoMovimentacao.Compra)">Compras</MudChip>
+                    <MudChip T="TipoMovimentacao?" Value="@((TipoMovimentacao?)TipoMovimentacao.Venda)">Vendas</MudChip>
+                </MudChipSet>
+            </Acoes>
+            <ChildContent>
+                @{ var grupos = Grupos(); }
+                <div class="wal-rolagem">
+                    <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="wal-tabela wal-tabela-acoes">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Tipo</th>
+                                <th>Ativo</th>
+                                <th class="wal-num wal-sec">Qtd.</th>
+                                <th class="wal-num wal-sec">Preço</th>
+                                <th class="wal-num wal-sec">Taxas</th>
+                                <th class="wal-num" title="Quantidade × preço + taxas na compra; − taxas na venda">Total</th>
+                                <th class="wal-acoes-col"><span class="wal-oculto-leitor">Ações</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var g in grupos.Take(mesesVisiveis))
+                            {
+                                var liquido = g.Sum(Aporte);
+                                <tr class="wal-linha-grupo">
+                                    <th scope="row" colspan="3">@NomeMes(g.Key) <span class="wal-k">@g.Count() @(g.Count() == 1 ? "transação" : "transações")</span></th>
+                                    <td class="wal-sec"></td><td class="wal-sec"></td>
+                                    <td class="wal-num wal-k wal-sec">aporte líquido</td>
+                                    <td class="wal-num @Formatacao.CorGanhoPerda(liquido)">@Formatacao.MoedaComSinal(liquido, Mascarar)</td>
+                                    <td></td>
+                                </tr>
+                                @foreach (var t in g)
+                                {
+                                    var compra = t.Tipo == TipoMovimentacao.Compra;
+                                    var bonificacao = painel.Bonificacoes.Contains(t.Id);
+                                    <tr>
+                                        <td>@t.Data.ToString("dd/MM/yyyy")</td>
+                                        <td>
+                                            @if (bonificacao)
+                                            {
+                                                <MudTooltip Text="Ações recebidas em bonificação: não contam como aporte">
+                                                    <span class="wal-tag-tipo wal-tag-bonificacao"><span aria-hidden="true">◆</span><span class="wal-tag-texto">Bonificação</span></span>
+                                                </MudTooltip>
+                                            }
+                                            else
+                                            {
+                                                <span class="@($"wal-tag-tipo {(compra ? "wal-tag-compra" : "wal-tag-venda")}")"><span aria-hidden="true">@(compra ? "▲" : "▼")</span><span class="wal-tag-texto">@(compra ? "Compra" : "Venda")</span></span>
+                                            }
+                                        </td>
+                                        <td><a href="@($"posicoes/{t.AtivoId}")" class="wal-forte">@t.AtivoTicker</a></td>
+                                        <td class="wal-num wal-sec">@(Mascarar ? "•••" : Formatacao.QuantidadeCurta(t.Quantidade))</td>
+                                        <td class="wal-num wal-sec">@Formatacao.Moeda(t.PrecoUnitario)</td>
+                                        <td class="wal-num wal-sec wal-k">@(t.Taxas > 0 ? Formatacao.Moeda(t.Taxas) : "–")</td>
+                                        <td class="wal-num wal-forte">@Formatacao.Moeda(Total(t), Mascarar)</td>
+                                        <td class="wal-num wal-acoes-col">
+                                            <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" OnClick="() => PainelEstado.Editar(t.Id)"
+                                                           aria-label="@($"Editar {(compra ? "compra" : "venda")} de {t.AtivoTicker} em {t.Data:dd/MM/yyyy}")" />
+                                            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" OnClick="() => ExcluirAsync(t)"
+                                                           aria-label="@($"Excluir {(compra ? "compra" : "venda")} de {t.AtivoTicker} em {t.Data:dd/MM/yyyy}")" />
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                            @if (grupos.Count == 0)
+                            {
+                                <tr><td colspan="8" class="wal-vazio">Nenhuma transação encontrada.</td></tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </div>
+                @if (grupos.Count > mesesVisiveis)
+                {
+                    <div class="wal-card-rodape">
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small" OnClick="() => mesesVisiveis += MesesPorVez">
+                            Carregar meses anteriores (@(grupos.Count - mesesVisiveis) restantes)
+                        </MudButton>
+                    </div>
+                }
+            </ChildContent>
+        </CardPainel>
+    </div>
+}
+
+@code {
+    /// <summary>Filtro vindo do detalhe do ativo ("Ver e editar").</summary>
+    [SupplyParameterFromQuery(Name = "ativoId")]
+    public int? AtivoIdFiltro { get; set; }
+
+    private const int MesesPorVez = 6;
+    private static readonly string[] Periodos = ["12M", "24M", "Início"];
+
+    private bool carregando = true;
+    private PainelTransacoesResponse? painel;
+    private string periodo = "12M";
+    private string? busca;
+    private TipoMovimentacao? tipo;
+    private string? ativoFiltro;
+    private int mesesVisiveis = MesesPorVez;
+
+    private bool Mascarar => Preferencias.Mascarar;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Preferencias.Mudou += AoMudarPreferencias;
+        Notificacoes.CarteiraAlterada += AoAlterarCarteira;
+        try
+        {
+            await CarregarAsync();
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+
+    protected override void OnParametersSet() =>
+        ativoFiltro = AtivoIdFiltro is int id ? painel?.Transacoes.FirstOrDefault(t => t.AtivoId == id)?.AtivoTicker : null;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Preferencias.CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        painel = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterPainelTransacoesAsync();
+        OnParametersSet();
+    }
+
+    // Salvou no painel lateral (ou em outra tela): recarrega a lista e o gráfico
+    private void AoAlterarCarteira() => InvokeAsync(async () =>
+    {
+        await CarregarAsync();
+        StateHasChanged();
+    });
+
+    // ── Aportes e vendas ─────────────────────────────────────────────────
+
+    private List<FluxoMensalResponse> MesesDoPeriodo()
+    {
+        var fluxo = painel!.FluxoMensal;
+        if (fluxo.Count == 0) return [];
+        var quantidade = periodo switch { "12M" => 12, "24M" => 24, _ => fluxo.Count };
+        // Meses sem transação também aparecem, para a régua de tempo ficar contínua
+        var ultimo = fluxo[^1].Mes;
+        var primeiro = periodo == "Início" ? fluxo[0].Mes : ultimo.AddMonths(-(quantidade - 1));
+        var porMes = fluxo.ToDictionary(f => f.Mes);
+        var meses = new List<FluxoMensalResponse>();
+        for (var m = primeiro; m <= ultimo; m = m.AddMonths(1))
+            meses.Add(porMes.GetValueOrDefault(m) ?? new FluxoMensalResponse(m, 0, 0));
+        return meses;
+    }
+
+    private int TransacoesNoPeriodo(List<FluxoMensalResponse> meses) => meses.Count == 0
+        ? 0
+        : painel!.Transacoes.Count(t => new DateOnly(t.Data.Year, t.Data.Month, 1) >= meses[0].Mes);
+
+    private static string Altura(decimal valor, decimal maior) =>
+        (maior > 0 ? valor / maior * 100 : 0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    // Com muitos meses, um rótulo por ano (em janeiro) e no primeiro mês
+    private static string RotuloMes(DateOnly mes, int indice, int total) =>
+        total <= 13 || mes.Month == 1 || indice == 0 ? mes.ToString(total <= 13 ? "MMM" : "MMM/yy", Formatacao.PtBR) : "";
+
+    // ── Histórico ────────────────────────────────────────────────────────
+
+    private List<IGrouping<DateOnly, MovimentacaoResponse>> Grupos() => painel!.Transacoes
+        .Where(t => AtivoIdFiltro is null || t.AtivoId == AtivoIdFiltro)
+        .Where(t => tipo is null || t.Tipo == tipo)
+        .Where(t => string.IsNullOrWhiteSpace(busca) || t.AtivoTicker.Contains(busca.Trim(), StringComparison.OrdinalIgnoreCase))
+        .GroupBy(t => new DateOnly(t.Data.Year, t.Data.Month, 1))
+        .ToList();
+
+    private static decimal Total(MovimentacaoResponse t) =>
+        t.Quantidade * t.PrecoUnitario + (t.Tipo == TipoMovimentacao.Compra ? t.Taxas : -t.Taxas);
+
+    // Dinheiro que entrou (+) ou saiu (−) da carteira; bonificação não é aporte
+    private decimal Aporte(MovimentacaoResponse t) => painel!.Bonificacoes.Contains(t.Id)
+        ? 0
+        : t.Tipo == TipoMovimentacao.Compra ? Total(t) : -Total(t);
+
+    private static string NomeMes(DateOnly mes)
+    {
+        var nome = mes.ToString("MMMM yyyy", Formatacao.PtBR);
+        return char.ToUpper(nome[0]) + nome[1..];
+    }
+
+    private void LimparFiltroAtivo() => Nav.NavigateTo("transacoes");
+
+    private async Task ExcluirAsync(MovimentacaoResponse t)
+    {
+        var compra = t.Tipo == TipoMovimentacao.Compra;
+        var confirmado = await Dialogos.ShowMessageBoxAsync(
+            "Excluir transação?",
+            $"A {(compra ? "compra" : "venda")} de {Formatacao.QuantidadeCurta(t.Quantidade)} {t.AtivoTicker} em {t.Data:dd/MM/yyyy} será apagada. Posição, resultado e gráficos são recalculados.",
+            yesText: "Excluir", cancelText: "Cancelar");
+        if (confirmado != true) return;
+
+        var resultado = await ScopedServices.GetRequiredService<IMovimentacaoService>().ExcluirAsync(t.Id);
+        if (!resultado.Sucesso)
+        {
+            Snackbar.Add(resultado.Erro ?? "Não foi possível excluir.", Severity.Error);
+            return;
+        }
+        Snackbar.Add("Transação excluída.", Severity.Success);
+        Notificacoes.NotificarAlteracao(); // a própria tela recarrega pelo aviso
+    }
+
+    private void AoMudarPreferencias() => InvokeAsync(StateHasChanged);
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        Preferencias.Mudou -= AoMudarPreferencias;
+        Notificacoes.CarteiraAlterada -= AoAlterarCarteira;
+        await base.DisposeAsyncCore();
+    }
+}

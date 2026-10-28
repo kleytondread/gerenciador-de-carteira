@@ -1,0 +1,178 @@
+@* Cadastrar um ativo para rastrear ou corrigir nome/tipo de um existente. O ticker não muda depois de criado. *@
+@inject IServiceScopeFactory ScopeFactory
+
+<MudDialog>
+    <TitleContent>@(Editando is null ? "Adicionar ativo" : $"Editar {Editando.Ticker}")</TitleContent>
+    <DialogContent>
+        <div class="wal-formulario">
+            @if (Editando is null || Editando.Tipo != TipoAtivo.Tesouro)
+            {
+                <MudToggleGroup T="TipoAtivo" Value="tipo" ValueChanged="TrocarTipoAsync" Outlined="true" Delimiters="true"
+                                Color="Color.Primary" Size="Size.Small" aria-label="Tipo de ativo">
+                    @foreach (var t in Editando is null ? Tipos : Tipos.Where(t => t != TipoAtivo.Tesouro))
+                    {
+                        <MudToggleItem T="TipoAtivo" Value="t" Text="@Formatacao.NomeTipo(t)" />
+                    }
+                </MudToggleGroup>
+            }
+
+            @if (Editando is not null)
+            {
+                <MudTextField T="string" @bind-Value="nome" Label="Nome" Variant="Variant.Outlined" Required="true"
+                              HelperText="@(Editando.Tipo == TipoAtivo.Tesouro ? "Título do Tesouro: o tipo não muda" : null)" />
+            }
+            else if (tipo == TipoAtivo.Tesouro)
+            {
+                <MudChipSet T="string" SelectionMode="SelectionMode.SingleSelection" @bind-SelectedValue="categoria"
+                            Size="Size.Small" Variant="Variant.Outlined" SelectedColor="Color.Primary" CheckMark="true" aria-label="Tipo de título">
+                    <MudChip T="string" Value="@string.Empty" Default="true">Todos</MudChip>
+                    @foreach (var c in TitulosTesouro.Categorias)
+                    {
+                        <MudChip T="string" Value="c">@c</MudChip>
+                    }
+                </MudChipSet>
+                <MudAutocomplete T="TituloTesouroResponse" @bind-Value="titulo" Label="Título" Variant="Variant.Outlined"
+                                 SearchFunc="BuscarTitulosAsync" ToStringFunc="@(t => t is null ? null : RotuloTitulo(t))"
+                                 Disabled="carregandoTitulos" MaxItems="null" ResetValueOnEmptyText="true" Clearable="true"
+                                 AdornmentIcon="@Icons.Material.Outlined.Search" Placeholder="Ex.: IPCA+ 2045" />
+                @if (carregandoTitulos)
+                {
+                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Carregando títulos do Tesouro" />
+                }
+                else if (titulo is { } sel)
+                {
+                    <div class="wal-ajuda">
+                        <span>Ticker <strong>@sel.Ticker</strong></span>
+                        <span>Último preço <strong>@Formatacao.Moeda(sel.UltimoPreco)</strong> em @sel.DataUltimoPreco.ToString("dd/MM/yyyy")</span>
+                        @if (sel.TaxaCompra is decimal taxa)
+                        {
+                            <span>Taxa <strong>@taxa.ToString("N2", Formatacao.PtBR)%</strong></span>
+                        }
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="wal-formulario-linha wal-formulario-ticker">
+                    <MudTextField T="string" Value="ticker" ValueChanged="v => ticker = (v ?? string.Empty).Trim().ToUpperInvariant()"
+                                  Label="Ticker" Variant="Variant.Outlined" Required="true" MaxLength="6" Placeholder="PETR4" />
+                    <MudTextField T="string" @bind-Value="nome" Label="Nome" Variant="Variant.Outlined" Required="true" Placeholder="Petrobras PN" />
+                </div>
+            }
+
+            @if (erro is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@erro</MudAlert>
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" DropShadow="false" Disabled="salvando" OnClick="SalvarAsync">
+            @(Editando is null ? "Adicionar" : "Salvar")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] public IMudDialogInstance MudDialog { get; set; } = default!;
+
+    /// <summary>Nulo para cadastrar um novo.</summary>
+    [Parameter] public AtivoRastreadoResponse? Editando { get; set; }
+
+    private static readonly TipoAtivo[] Tipos = [TipoAtivo.Acao, TipoAtivo.ETF, TipoAtivo.FII, TipoAtivo.BDR, TipoAtivo.Tesouro];
+
+    private TipoAtivo tipo = TipoAtivo.Acao;
+    private string ticker = string.Empty;
+    private string nome = string.Empty;
+    private string? erro;
+    private bool salvando;
+
+    // Títulos do Tesouro: carregados na primeira vez que o tipo Tesouro é escolhido
+    private List<TituloTesouroResponse>? titulos;
+    private bool carregandoTitulos;
+    private string categoria = string.Empty;
+    private TituloTesouroResponse? titulo;
+
+    private static string RotuloTitulo(TituloTesouroResponse t) => $"{t.Nome} — venc. {t.Vencimento:dd/MM/yyyy}";
+
+    protected override void OnInitialized()
+    {
+        if (Editando is null) return;
+        tipo = Editando.Tipo;
+        nome = Editando.Nome;
+    }
+
+    private async Task TrocarTipoAsync(TipoAtivo novo)
+    {
+        tipo = novo;
+        erro = null;
+        if (tipo != TipoAtivo.Tesouro || titulos is not null) return;
+
+        carregandoTitulos = true;
+        try
+        {
+            // Pode baixar o arquivo do Tesouro (se o salvo tiver 5h ou mais), o que leva alguns segundos
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            titulos = await scope.ServiceProvider.GetRequiredService<ITesouroDiretoService>().ListarTitulosAsync();
+            if (titulos.Count == 0)
+            {
+                erro = "A lista de títulos do Tesouro está indisponível agora. Tente mais tarde.";
+                titulos = null; // tenta de novo na próxima vez que o tipo for escolhido
+            }
+        }
+        catch (Exception)
+        {
+            erro = "Não foi possível ler a lista de títulos do Tesouro. Tente mais tarde.";
+            titulos = null;
+        }
+        finally
+        {
+            carregandoTitulos = false;
+        }
+    }
+
+    private Task<IEnumerable<TituloTesouroResponse>> BuscarTitulosAsync(string? texto, CancellationToken _)
+    {
+        var termos = (texto ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var encontrados = (titulos ?? [])
+            .Where(t => categoria == string.Empty || t.Categoria == categoria)
+            .Where(t => termos.All(p => RotuloTitulo(t).Contains(p, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(t => t.Nome).ThenBy(t => t.Vencimento);
+        return Task.FromResult<IEnumerable<TituloTesouroResponse>>(encontrados);
+    }
+
+    private async Task SalvarAsync()
+    {
+        erro = null;
+        salvando = true;
+        try
+        {
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            var servico = scope.ServiceProvider.GetRequiredService<IAtivoService>();
+            if (Editando is not null)
+            {
+                var editado = await servico.EditarAsync(Editando.Id, new EditarAtivoRequest(nome, tipo));
+                if (editado.Sucesso) MudDialog.Close(DialogResult.Ok(editado.Valor!.Ticker));
+                else erro = editado.Erro;
+                return;
+            }
+
+            if (tipo == TipoAtivo.Tesouro && titulo is null)
+            {
+                erro = "Escolha um título da lista.";
+                return;
+            }
+            var pedido = tipo == TipoAtivo.Tesouro
+                ? new CriarAtivoRequest(titulo!.Ticker, titulo.Nome, TipoAtivo.Tesouro, titulo.TipoTitulo, titulo.Vencimento)
+                : new CriarAtivoRequest(ticker, nome, tipo);
+            var criado = await servico.CriarAsync(pedido);
+            if (criado.Sucesso) MudDialog.Close(DialogResult.Ok(criado.Valor!.Ticker));
+            else erro = criado.Erro;
+        }
+        finally
+        {
+            salvando = false;
+        }
+    }
+}

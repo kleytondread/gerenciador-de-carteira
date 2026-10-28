@@ -17,9 +17,12 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddMudServices();
+// MainLayout lê os cookies de preferência na pré-renderização
+builder.Services.AddHttpContextAccessor();
 // Estado de interface por circuito (cada aba do navegador tem o seu)
 builder.Services.AddScoped<PreferenciasExibicao>();
 builder.Services.AddScoped<NotificacoesCarteira>();
+builder.Services.AddScoped<PainelTransacaoEstado>();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));

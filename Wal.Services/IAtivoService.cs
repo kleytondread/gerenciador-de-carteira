@@ -23,4 +23,19 @@ public interface IAtivoService
     Task<ResultadoOperacao> ReativarAsync(int id);
 
     Task<ResultadoOperacao<List<CotacaoResponse>>> ObterCotacoesAsync(int ativoId, string? periodo);
+
+    /// <summary>Todos os ativos com a situação na carteira e o estado das cotações, por ticker.</summary>
+    Task<List<AtivoRastreadoResponse>> ObterRastreadosAsync();
+
+    /// <summary>
+    /// Liga ou desliga a sincronização diária do ativo (EstaAtivo). Diferente de <see cref="ExcluirAsync"/>, vale
+    /// também para ativos com transações: pausar só para de buscar dados novos, nada é apagado.
+    /// </summary>
+    Task<ResultadoOperacao> DefinirRastreamentoAsync(int id, bool rastrear);
+
+    /// <summary>
+    /// Pregão mais recente até a data (inclusive), para sugerir o preço de uma transação. Nulo sem cotação.
+    /// Atenção: o histórico vem ajustado pelos eventos corporativos posteriores (base de ações atual).
+    /// </summary>
+    Task<CotacaoResponse?> ObterCotacaoAteAsync(int ativoId, DateOnly data);
 }

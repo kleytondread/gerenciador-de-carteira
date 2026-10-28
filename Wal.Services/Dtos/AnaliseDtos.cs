@@ -84,6 +84,19 @@ public record PainelEventosResponse(
     List<PagadorProventosResponse> Pagadores12Meses,
     List<EventoCorporativoAtivoResponse> EventosCorporativos);
 
+/// <summary>Dinheiro que entrou (compras, com taxas) e saiu (vendas, sem taxas) da carteira num mês. Bonificações não contam.</summary>
+public record FluxoMensalResponse(DateOnly Mes, decimal Compras, decimal Vendas)
+{
+    public decimal AporteLiquido => Compras - Vendas;
+}
+
+/// <summary>Tela de Transações: todas as movimentações (da mais recente para a mais antiga) e o fluxo de cada mês.</summary>
+/// <param name="Bonificacoes">Ids das compras que são bonificação (ações recebidas, não dinheiro novo).</param>
+public record PainelTransacoesResponse(
+    List<MovimentacaoResponse> Transacoes,
+    List<FluxoMensalResponse> FluxoMensal,
+    IReadOnlySet<int> Bonificacoes);
+
 /// <summary>Tudo o que a tela de detalhe de um ativo mostra.</summary>
 /// <param name="Posicao">Nula quando o ativo não está mais (ou nunca esteve) na carteira.</param>
 /// <param name="Encerrada">Resultado realizado, quando o ativo já foi vendido por inteiro.</param>

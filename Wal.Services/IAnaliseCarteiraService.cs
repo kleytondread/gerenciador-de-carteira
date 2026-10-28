@@ -17,6 +17,9 @@ public interface IAnaliseCarteiraService
     /// <summary>Proventos recebidos, pagadores dos últimos 12 meses e eventos corporativos — um cálculo só. Nulo sem movimentações.</summary>
     Task<PainelEventosResponse?> ObterPainelEventosAsync();
 
+    /// <summary>Todas as transações, o fluxo mensal de compras e vendas (sem bonificações) e quais compras são bonificação.</summary>
+    Task<PainelTransacoesResponse> ObterPainelTransacoesAsync();
+
     /// <summary>Mês, ano, 12 meses, 24 meses e desde o início, terminando na cotação mais recente.</summary>
     Task<List<ResumoPeriodoResponse>> ObterResumoPeriodosAsync();
 

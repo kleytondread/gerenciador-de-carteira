@@ -33,7 +33,7 @@
                     @foreach (var b in CoresSeries.Benchmarks)
                     {
                         <MudChip T="Benchmark" Value="b" Disabled="@(!selecionados.Contains(b) && selecionados.Count >= MaximoBenchmarks)">
-                            <span class="wal-traco" style="border-color:@CoresSeries.Cor(b)"></span>@CoresSeries.Nome(b)
+                            <span class="wal-traco" style="border-color:@CoresSeries.Cor(b)"></span>@CoresSeries.Nome(b, taxaIpcaMais)
                         </MudChip>
                     }
                 </MudChipSet>
@@ -69,7 +69,8 @@
     private string periodo = PeriodoInicio;
     private string modo = ModoRentabilidade;
     private IReadOnlyCollection<Benchmark> selecionados = [Benchmark.CDI];
-    private readonly Dictionary<(Benchmark, DateOnly, DateOnly), Dictionary<DateOnly, decimal>> cacheBenchmarks = [];
+    private decimal taxaIpcaMais = CoresSeries.TaxaIpcaMaisPadrao;
+    private readonly Dictionary<(Benchmark, DateOnly, DateOnly, decimal), Dictionary<DateOnly, decimal>> cacheBenchmarks = [];
     private string? chaveDesenhada;
     private bool graficoCriado;
 
@@ -85,7 +86,8 @@
         if (firstRender) await LerBenchmarksSalvosAsync();
 
         // Redesenha só quando algo que aparece no gráfico mudou
-        var chave = $"{modo}|{periodo}|{string.Join(',', selecionados.Order())}|{Mascarar}|{Serie.Count}|{(Serie.Count > 0 ? Serie[^1].Data : default)}";
+        // A série entra pela identidade: depois de uma transação chega uma lista nova, com o mesmo tamanho
+        var chave = $"{modo}|{periodo}|{string.Join(',', selecionados.Order())}|{taxaIpcaMais}|{Mascarar}|{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Serie)}";
         if (chave == chaveDesenhada) return;
         chaveDesenhada = chave;
         await DesenharAsync();
@@ -139,7 +141,7 @@
             {
                 var acumulado = await BenchmarkAsync(b, inicioBenchmark, fim);
                 if (acumulado.Count == 0) continue;
-                series.Add(new(CoresSeries.Nome(b),
+                series.Add(new(CoresSeries.Nome(b, taxaIpcaMais),
                     janela.Select(p => p.Data < inicioBenchmark ? 0m
                         : acumulado.TryGetValue(p.Data, out var v) ? Math.Round(v * 100, 4) : (decimal?)null).ToArray(),
                     CoresSeries.Cor(b), true, false));
@@ -154,19 +156,20 @@
     // Escopo próprio por consulta: o componente vive no circuito e não deve dividir o DbContext da página
     private async Task<Dictionary<DateOnly, decimal>> BenchmarkAsync(Benchmark benchmark, DateOnly inicio, DateOnly fim)
     {
-        if (cacheBenchmarks.TryGetValue((benchmark, inicio, fim), out var guardado)) return guardado;
+        var taxa = benchmark == Benchmark.IpcaMais ? taxaIpcaMais : 0;
+        if (cacheBenchmarks.TryGetValue((benchmark, inicio, fim, taxa), out var guardado)) return guardado;
 
         await using var scope = ScopeFactory.CreateAsyncScope();
         var indices = scope.ServiceProvider.GetRequiredService<IIndicesReferenciaService>();
-        var taxa = benchmark == Benchmark.IpcaMais ? CoresSeries.TaxaIpcaMais : 0;
         var serie = await indices.ObterRentabilidadeAcumuladaAsync(benchmark, inicio, fim, taxa);
-        return cacheBenchmarks[(benchmark, inicio, fim)] = serie.ToDictionary(p => p.Data, p => p.RentabilidadeAcumulada);
+        return cacheBenchmarks[(benchmark, inicio, fim, taxa)] =serie.ToDictionary(p => p.Data, p => p.RentabilidadeAcumulada);
     }
 
     private async Task LerBenchmarksSalvosAsync()
     {
+        taxaIpcaMais = CoresSeries.LerTaxaIpcaMais(await Js.InvokeAsync<string?>("walPreferencias.obter", CoresSeries.ChaveTaxaIpcaMais));
         var salvo = await Js.InvokeAsync<string?>("walPreferencias.obter", ChaveBenchmarks);
-        if (salvo is null) return;
+        if (salvo is null) { StateHasChanged(); return; }
         selecionados = salvo.Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(n => Enum.TryParse<Benchmark>(n, out var b) ? b : (Benchmark?)null)
             .OfType<Benchmark>()

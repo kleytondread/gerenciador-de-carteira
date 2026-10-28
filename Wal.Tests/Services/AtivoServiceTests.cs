@@ -350,4 +350,75 @@ public class AtivoServiceTests : SqliteInMemoryTestBase
         Assert.False(resultado.Sucesso);
         Assert.Equal(TipoErroOperacao.Validacao, resultado.TipoErro);
     }
+
+    [Fact]
+    public async Task ObterCotacaoAteAsync_UsaUltimoPregaoAteAData()
+    {
+        var ativo = Fixtures.NovoAtivo();
+        Db.Ativos.Add(ativo);
+        await Db.SaveChangesAsync();
+        Db.CotacoesHistoricas.AddRange(
+            Fixtures.NovaCotacao(ativo.Id, new DateOnly(2026, 1, 2), 10),
+            Fixtures.NovaCotacao(ativo.Id, new DateOnly(2026, 1, 5), 11));
+        await Db.SaveChangesAsync();
+
+        var domingo = await sut.ObterCotacaoAteAsync(ativo.Id, new DateOnly(2026, 1, 4));
+        var antes = await sut.ObterCotacaoAteAsync(ativo.Id, new DateOnly(2025, 12, 31));
+
+        Assert.Equal((new DateOnly(2026, 1, 2), 10m), (domingo!.Data, domingo.Fechamento));
+        Assert.Null(antes);
+    }
+
+    [Fact]
+    public async Task ObterRastreadosAsync_SituacaoNaCarteiraESaudeDasCotacoes()
+    {
+        var aberta = Fixtures.NovoAtivo("ITSA4", "Itaúsa");
+        var vendida = Fixtures.NovoAtivo("CPLE6", "Copel");
+        var semTransacao = Fixtures.NovoAtivo("PETR4", "Petrobras");
+        Db.Ativos.AddRange(aberta, vendida, semTransacao);
+        await Db.SaveChangesAsync();
+        Db.Movimentacoes.AddRange(
+            Fixtures.NovaMovimentacao(aberta.Id, TipoMovimentacao.Compra, new DateOnly(2024, 1, 2), 10, 10),
+            Fixtures.NovaMovimentacao(vendida.Id, TipoMovimentacao.Compra, new DateOnly(2024, 1, 2), 5, 10),
+            Fixtures.NovaMovimentacao(vendida.Id, TipoMovimentacao.Venda, new DateOnly(2024, 6, 3), 5, 12));
+        Db.CotacoesHistoricas.AddRange(
+            Fixtures.NovaCotacao(aberta.Id, new DateOnly(2024, 1, 2), 10),
+            Fixtures.NovaCotacao(aberta.Id, new DateOnly(2026, 10, 27), 13),
+            // Saiu de negociação: a última cotação ficou para trás
+            Fixtures.NovaCotacao(vendida.Id, new DateOnly(2024, 12, 30), 9));
+        Db.Proventos.Add(Fixtures.NovoProvento(aberta.Id, new DateOnly(2025, 3, 1), 0.1m));
+        await Db.SaveChangesAsync();
+
+        var rastreados = (await sut.ObterRastreadosAsync()).ToDictionary(a => a.Ticker);
+
+        Assert.Equal(SituacaoNaCarteira.Aberta, rastreados["ITSA4"].Situacao);
+        Assert.Equal(10m, rastreados["ITSA4"].Quantidade);
+        Assert.Equal(SaudeCotacoes.EmDia, rastreados["ITSA4"].Saude);
+        Assert.Equal(new DateOnly(2024, 1, 2), rastreados["ITSA4"].PrimeiraCotacao);
+        Assert.Equal(1, rastreados["ITSA4"].Proventos);
+        Assert.Equal(SituacaoNaCarteira.Encerrada, rastreados["CPLE6"].Situacao);
+        Assert.Equal(SaudeCotacoes.Desatualizada, rastreados["CPLE6"].Saude);
+        Assert.Equal(SituacaoNaCarteira.SemTransacoes, rastreados["PETR4"].Situacao);
+        Assert.Equal(SaudeCotacoes.SemCotacao, rastreados["PETR4"].Saude);
+    }
+
+    [Fact]
+    public async Task DefinirRastreamentoAsync_PausaMesmoComTransacoes()
+    {
+        var ativo = Fixtures.NovoAtivo();
+        Db.Ativos.Add(ativo);
+        await Db.SaveChangesAsync();
+        Db.Movimentacoes.Add(Fixtures.NovaMovimentacao(ativo.Id, TipoMovimentacao.Compra, new DateOnly(2026, 1, 2), 10, 10));
+        await Db.SaveChangesAsync();
+
+        var pausar = await sut.DefinirRastreamentoAsync(ativo.Id, false);
+
+        Assert.True(pausar.Sucesso);
+        await Db.Entry(ativo).ReloadAsync();
+        Assert.False(ativo.EstaAtivo);
+
+        await sut.DefinirRastreamentoAsync(ativo.Id, true);
+        await Db.Entry(ativo).ReloadAsync();
+        Assert.True(ativo.EstaAtivo);
+    }
 }

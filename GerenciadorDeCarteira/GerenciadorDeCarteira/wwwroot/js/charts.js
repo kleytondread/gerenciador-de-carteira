@@ -7,7 +7,7 @@ window.walCharts._themeColors = (isDark) => isDark
     : { text: '#666666', grid: 'rgba(0, 0, 0, 0.08)' };
 
 window.walCharts._isDark = () =>
-    document.documentElement.getAttribute('data-bs-theme') === 'dark';
+    document.documentElement.getAttribute('data-tema') === 'dark';
 
 window.walCharts._moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 window.walCharts._moedaCompacta = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });

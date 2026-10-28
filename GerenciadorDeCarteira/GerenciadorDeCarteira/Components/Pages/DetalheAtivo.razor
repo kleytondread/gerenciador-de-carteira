@@ -3,7 +3,10 @@
 @* DbContext próprio por página — ver comentário em Home.razor *@
 @inherits OwningComponentBase
 @inject PreferenciasExibicao Preferencias
+@inject NotificacoesCarteira Notificacoes
+@inject PainelTransacaoEstado PainelEstado
 @inject ISnackbar Snackbar
+@inject IDialogService Dialogos
 
 <PageTitle>@(detalhe?.Ativo.Ticker ?? "Ativo") - Gestor de Carteira B3</PageTitle>
 <SectionContent SectionName="@TituloPagina.Secao">
@@ -59,11 +62,15 @@ else
                     </div>
                 </div>
                 <div class="wal-ativo-acoes">
-                    <MudButton Href="@($"transacoes?ativoId={ativo.Id}")" Variant="Variant.Filled" Color="Color.Primary"
+                    <MudButton OnClick="() => PainelEstado.Nova(ativo.Id)" Variant="Variant.Filled" Color="Color.Primary"
                                DropShadow="false" StartIcon="@Icons.Material.Filled.Add">Transação de @ativo.Ticker</MudButton>
                     <MudMenu Icon="@Icons.Material.Filled.MoreVert" AriaLabel="Mais ações" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
                         <MudMenuItem Href="ativos" Icon="@Icons.Material.Outlined.Edit">Editar ativo</MudMenuItem>
                         <MudMenuItem OnClick="Sincronizar" Icon="@Icons.Material.Outlined.Sync" Disabled="sincronizando">Sincronizar cotações agora</MudMenuItem>
+                        <MudMenuItem OnClick="AlternarRastreamentoAsync"
+                                     Icon="@(ativo.EstaAtivo ? Icons.Material.Outlined.PauseCircle : Icons.Material.Outlined.PlayCircle)">
+                            @(ativo.EstaAtivo ? "Pausar rastreamento" : "Retomar rastreamento")
+                        </MudMenuItem>
                     </MudMenu>
                 </div>
             </div>
@@ -262,7 +269,11 @@ else
 
     private bool Mascarar => Preferencias.Mascarar;
 
-    protected override void OnInitialized() => Preferencias.Mudou += AoMudarPreferencias;
+    protected override void OnInitialized()
+    {
+        Preferencias.Mudou += AoMudarPreferencias;
+        Notificacoes.CarteiraAlterada += AoAlterarCarteira;
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -271,6 +282,19 @@ else
         idCarregado = Id;
 
         carregando = true;
+        await CarregarAsync();
+        carregando = false;
+    }
+
+    // Transação salva no painel lateral: recarrega sem a barra de carregamento, para a tela não piscar
+    private void AoAlterarCarteira() => InvokeAsync(async () =>
+    {
+        await CarregarAsync();
+        StateHasChanged();
+    });
+
+    private async Task CarregarAsync()
+    {
         detalhe = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterDetalheAtivoAsync(Id);
         if (detalhe is not null)
         {
@@ -279,12 +303,34 @@ else
                 new() { Name = nome, Data = new ChartData<double>(detalhe.ProventosPorAno.Select(a => (double)valor(a)).ToList()) };
             seriesProventos = [Serie("Dividendos", a => a.Dividendos), Serie("JCP", a => a.Jcp), Serie("Rendimentos", a => a.Rendimentos)];
         }
-        carregando = false;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender) await Preferencias.CarregarAsync();
+    }
+
+    private async Task AlternarRastreamentoAsync()
+    {
+        if (detalhe is null) return;
+        var pausar = detalhe.Ativo.EstaAtivo;
+        if (pausar && detalhe.Posicao is not null)
+        {
+            var confirmado = await Dialogos.ShowMessageBoxAsync(
+                $"Pausar {detalhe.Ativo.Ticker}?",
+                "Ele está na carteira: sem cotações novas, o valor dele fica parado na última cotação e proventos novos não chegam.",
+                yesText: "Pausar", cancelText: "Cancelar");
+            if (confirmado != true) return;
+        }
+
+        var resultado = await ScopedServices.GetRequiredService<IAtivoService>().DefinirRastreamentoAsync(Id, !pausar);
+        if (!resultado.Sucesso)
+        {
+            Snackbar.Add(resultado.Erro ?? "Não foi possível alterar.", Severity.Error);
+            return;
+        }
+        Snackbar.Add(pausar ? $"{detalhe.Ativo.Ticker} pausado." : $"{detalhe.Ativo.Ticker} volta a ser atualizado na próxima sincronização.", Severity.Normal);
+        await CarregarAsync();
     }
 
     // Recarrega cotações, proventos e eventos desde 2020 em segundo plano (mesmo job do cadastro)
@@ -319,6 +365,7 @@ else
     protected override async ValueTask DisposeAsyncCore()
     {
         Preferencias.Mudou -= AoMudarPreferencias;
+        Notificacoes.CarteiraAlterada -= AoAlterarCarteira;
         await base.DisposeAsyncCore();
     }
 }

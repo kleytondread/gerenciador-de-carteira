@@ -85,7 +85,8 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        var chave = $"{Detalhe.Ativo.Id}|{modo}|{periodo}|{string.Join(',', marcadores.Order())}|{Mascarar}|{Detalhe.Serie.Count}";
+        // O detalhe entra pela identidade: recarregado depois de uma transação, chega um objeto novo
+        var chave = $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Detalhe)}|{modo}|{periodo}|{string.Join(',', marcadores.Order())}|{Mascarar}";
         if (chave == chaveDesenhada) return;
         chaveDesenhada = chave;
         await DesenharAsync();

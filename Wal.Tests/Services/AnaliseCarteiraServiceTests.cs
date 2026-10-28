@@ -374,6 +374,32 @@ public class AnaliseCarteiraServiceTests : SqliteInMemoryTestBase
     }
 
     [Fact]
+    public async Task ObterPainelTransacoesAsync_FluxoMensalSemBonificacaoETransacoesDaMaisRecente()
+    {
+        var ativo = await AtivoAsync("ITSA4");
+        await MovimentarAsync(ativo, TipoMovimentacao.Compra, D(1, 5), 100, 10);
+        await MovimentarAsync(ativo, TipoMovimentacao.Venda, D(2, 10), 20, 12);
+        // Bonificação de 10% lançada como compra: não é aporte
+        await MovimentarAsync(ativo, TipoMovimentacao.Compra, D(2, 20), 8, 9);
+        Db.EventosCorporativos.Add(Fixtures.NovoEvento(ativo.Id, D(2, 19), 11, 10));
+        await CotacoesAsync(ativo, (D(1, 5), 10), (D(2, 10), 12), (D(3, 2), 12));
+
+        var painel = await sut.ObterPainelTransacoesAsync();
+
+        Assert.Equal([D(2, 20), D(2, 10), D(1, 5)], painel.Transacoes.Select(t => t.Data));
+        Assert.Equal("ITSA4", painel.Transacoes[0].AtivoTicker);
+        var bonificacao = painel.Transacoes[0].Id;
+        Assert.Contains(bonificacao, painel.Bonificacoes);
+
+        var janeiro = painel.FluxoMensal.Single(f => f.Mes == D(1, 1));
+        var fevereiro = painel.FluxoMensal.Single(f => f.Mes == D(2, 1));
+        Assert.Equal(1000m, janeiro.Compras);
+        Assert.Equal(0m, fevereiro.Compras);   // a bonificação ficou de fora
+        Assert.Equal(240m, fevereiro.Vendas);
+        Assert.Equal(-240m, fevereiro.AporteLiquido);
+    }
+
+    [Fact]
     public async Task ObterDashboardAsync_SemMovimentacoes_RetornaNulo()
     {
         Assert.Null(await sut.ObterDashboardAsync());

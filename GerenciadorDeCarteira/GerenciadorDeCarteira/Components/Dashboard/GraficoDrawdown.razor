@@ -6,7 +6,7 @@
     <Acoes>
         @if (Drawdown.DataMaximo is DateOnly data)
         {
-            <span class="wal-k">Máximo <span class="text-danger wal-forte">@Formatacao.Percentual(Drawdown.Maximo)</span> em @data.ToString("dd/MM/yyyy")</span>
+            <span class="wal-k">Máximo <span class="wal-perda wal-forte">@Formatacao.Percentual(Drawdown.Maximo)</span> em @data.ToString("dd/MM/yyyy")</span>
         }
     </Acoes>
     <ChildContent>

@@ -21,8 +21,8 @@
 
 
 #components-reconnect-modal {
-    background-color: var(--bs-body-bg, white);
-    color: var(--bs-body-color, #212529);
+    background-color: var(--mud-palette-surface, white);
+    color: var(--mud-palette-text-primary, #1d1d1f);
     width: 20rem;
     margin: 20vh auto;
     padding: 2rem;

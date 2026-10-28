@@ -20,7 +20,7 @@ Wal.Docs/
 **/Dados/
 
 # ── Chaves e configurações locais ────────────────────────────────────────
-# Token da Brapi e afins: use user secrets (dotnet user-secrets) ou estes arquivos locais
+# Chaves e tokens: use user secrets (dotnet user-secrets) ou estes arquivos locais
 appsettings.*.local.json
 appsettings.Local.json
 secrets.json

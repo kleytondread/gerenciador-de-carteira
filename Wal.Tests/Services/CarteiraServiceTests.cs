@@ -428,47 +428,20 @@ public class CarteiraServiceTests : SqliteInMemoryTestBase
     }
 
     [Fact]
-    public async Task ObterRentabilidadeHistoricaAsync_ProventoEmDuasFontes_ContaUmaVezSo()
-    {
-        var ativo = Fixtures.NovoAtivo();
-        Db.Ativos.Add(ativo);
-        await Db.SaveChangesAsync();
-
-        // Mesmo evento nas duas fontes: Yahoo grava a data ex (02/jan); Brapi grava a data com (01/jan)
-        // e a data de pagamento (20/jan). Só o do Yahoo pode entrar.
-        Db.Movimentacoes.Add(Fixtures.NovaMovimentacao(ativo.Id, TipoMovimentacao.Compra, new DateOnly(2026, 1, 1), 10, 20));
-        Db.CotacoesHistoricas.AddRange(
-            Fixtures.NovaCotacao(ativo.Id, new DateOnly(2026, 1, 1), fechamento: 20),
-            Fixtures.NovaCotacao(ativo.Id, new DateOnly(2026, 1, 2), fechamento: 19));
-        Db.Proventos.AddRange(
-            Fixtures.NovoProvento(ativo.Id, new DateOnly(2026, 1, 2), valorPorAcao: 1),
-            new Provento
-            {
-                AtivoId = ativo.Id, TipoProvento = TipoProvento.Dividendo, Origem = OrigemDado.BrapiDev,
-                DataCom = new DateOnly(2026, 1, 1), DataPagamento = new DateOnly(2026, 1, 20), ValorPorAcao = 1
-            });
-        await Db.SaveChangesAsync();
-
-        var pontos = await sut.ObterRentabilidadeHistoricaAsync();
-
-        Assert.Equal(0m, pontos[1].RentabilidadeAcumulada); // contado em dobro, daria +5%
-    }
-
-    [Fact]
     public async Task ObterRentabilidadeHistoricaAsync_ProventoComDataCom_EntraNoDiaSeguinte()
     {
         var ativo = Fixtures.NovoAtivo();
         Db.Ativos.Add(ativo);
         await Db.SaveChangesAsync();
 
-        // Fonte que grava a data com (01/jan): quem tinha no fim de 01/jan recebe, e o ganho entra em 02/jan
+        // Lançamento manual grava a data com (01/jan): quem tinha no fim de 01/jan recebe, e o ganho entra em 02/jan
         Db.Movimentacoes.Add(Fixtures.NovaMovimentacao(ativo.Id, TipoMovimentacao.Compra, new DateOnly(2026, 1, 1), 10, 20));
         Db.CotacoesHistoricas.AddRange(
             Fixtures.NovaCotacao(ativo.Id, new DateOnly(2026, 1, 1), fechamento: 20),
             Fixtures.NovaCotacao(ativo.Id, new DateOnly(2026, 1, 2), fechamento: 19));
         Db.Proventos.Add(new Provento
         {
-            AtivoId = ativo.Id, TipoProvento = TipoProvento.JCP, Origem = OrigemDado.BrapiDev,
+            AtivoId = ativo.Id, TipoProvento = TipoProvento.JCP, Origem = OrigemDado.Manual,
             DataCom = new DateOnly(2026, 1, 1), DataPagamento = new DateOnly(2026, 1, 20), ValorPorAcao = 1
         });
         await Db.SaveChangesAsync();

@@ -87,21 +87,12 @@ internal sealed class MotorCarteira
             .GroupBy(c => c.AtivoId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
-        // Proventos agrupados pela data ex (primeiro dia sem direito), quando entram na rentabilidade.
-        // Das fontes automáticas, uma por ativo: Yahoo e Brapi gravam o mesmo evento com datas diferentes,
-        // e somar as duas contaria o provento duas vezes. Os lançamentos manuais sempre entram — servem
-        // justamente para o que as fontes automáticas não trazem.
+        // Proventos agrupados pela data ex (primeiro dia sem direito), quando entram na rentabilidade: os do
+        // Yahoo e os lançados à mão (que servem justamente para o que o Yahoo não traz).
         // Ocultos foram descartados pelo usuário e não entram em nada
         var proventosPorDataEx = (await db.Proventos.AsNoTracking()
                 .Where(p => ativoIds.Contains(p.AtivoId) && !p.Oculto)
                 .ToListAsync())
-            .GroupBy(p => p.AtivoId)
-            .SelectMany(g =>
-            {
-                var automaticas = g.Where(p => p.Origem != OrigemDado.Manual).ToList();
-                var origem = automaticas.Count > 0 ? automaticas.Select(p => p.Origem).MinBy(PrioridadeOrigem) : (OrigemDado?)null;
-                return g.Where(p => p.Origem == OrigemDado.Manual || p.Origem == origem);
-            })
             .ToLookup(DataEx);
 
         // Quantidades na base de preço do Yahoo (ver ConversaoBaseYahoo)
@@ -282,15 +273,7 @@ internal sealed class MotorCarteira
     public FotoAtivo FotoEm(DateOnly data, int ativoId) =>
         Fotos.TryGetValue(data, out var fotos) && fotos.TryGetValue(ativoId, out var foto) ? foto : FotoAtivo.Vazia;
 
-    // Prioridade quando um ativo tem proventos de mais de uma fonte automática: Yahoo é a da sincronização.
-    private static int PrioridadeOrigem(OrigemDado origem) => origem switch
-    {
-        OrigemDado.YahooFinance => 0,
-        OrigemDado.BrapiDev => 1,
-        _ => 2
-    };
-
-    // O Yahoo grava a própria data ex em DataCom; as demais fontes gravam a data com (último dia com
+    // O Yahoo grava a própria data ex em DataCom; o lançamento manual grava a data com (último dia com
     // direito), e a data ex é o dia seguinte. Sem data com, a data de pagamento é a melhor aproximação.
     private static DateOnly DataEx(Provento provento) => provento.Origem == OrigemDado.YahooFinance
         ? provento.DataCom ?? provento.DataPagamento

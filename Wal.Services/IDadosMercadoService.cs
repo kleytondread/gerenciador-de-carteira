@@ -3,7 +3,8 @@ namespace Wal.Services;
 public interface IDadosMercadoService
 {
     /// <summary>
-    /// Sincronização incremental via brapi.dev — últimos 3 meses de cotações + proventos.
+    /// Sincronização incremental via Yahoo Finance (títulos do Tesouro: arquivo do Tesouro Transparente) —
+    /// últimos 90 dias de cotações, proventos e eventos corporativos.
     /// Usada pelo job diário recorrente.
     /// </summary>
     Task SincronizarAtivoAsync(int ativoId);
@@ -11,7 +12,7 @@ public interface IDadosMercadoService
     /// <summary>
     /// Carga histórica completa via Yahoo Finance (range=max).
     /// Deve ser chamada na primeira vez que um ativo é adicionado à carteira.
-    /// Persiste apenas cotações; proventos vêm da brapi.dev via SincronizarAtivoAsync.
+    /// Traz cotações, proventos e eventos corporativos desde 2020.
     /// </summary>
     Task CargaHistoricaCompletaAsync(int ativoId);
 }

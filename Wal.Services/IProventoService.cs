@@ -4,7 +4,7 @@ using Wal.Services.Dtos;
 namespace Wal.Services;
 
 /// <summary>
-/// Lançamento e correção de proventos. Importados (Yahoo, Brapi) nunca são apagados nem têm a chave alterada,
+/// Lançamento e correção de proventos. Importados do Yahoo nunca são apagados nem têm a chave alterada,
 /// porque a sincronização os recriaria: a correção fica em colunas próprias e a exclusão vira "oculto".
 /// </summary>
 public interface IProventoService

@@ -7,11 +7,11 @@
                       AdornmentIcon="@Icons.Material.Outlined.Search" Clearable="true" Class="wal-busca" aria-label="Buscar ativo" />
         <MudChipSet T="TipoProvento?" SelectionMode="SelectionMode.SingleSelection" SelectedValue="tipo"
                     SelectedValueChanged="v => { tipo = v; pagina = 1; }" Size="Size.Small" Variant="Variant.Outlined"
-                    SelectedColor="Color.Primary" aria-label="Tipo">
+                    SelectedColor="Color.Primary" CheckMark="true" aria-label="Tipo">
             <MudChip T="TipoProvento?" Value="@((TipoProvento?)null)" Default="true">Todos</MudChip>
-            @foreach (var (t, nome, cor) in Tipos)
+            @foreach (var t in GraficoProventos.Tipos)
             {
-                <MudChip T="TipoProvento?" Value="@((TipoProvento?)t)"><span class="wal-quadrado" style="background:@cor"></span>@nome</MudChip>
+                <MudChip T="TipoProvento?" Value="@((TipoProvento?)t)"><span class="wal-quadrado" style="background:@GraficoProventos.Cor(t)"></span>@GraficoProventos.Nome(t)</MudChip>
             }
         </MudChipSet>
         <MudSelect T="int?" @bind-Value="ano" @bind-Value:after="() => pagina = 1" Variant="Variant.Outlined" Margin="Margin.Dense"
@@ -41,7 +41,7 @@
                         {
                             <tr>
                                 <td>@o.DataPagamento.ToString("dd/MM/yyyy")</td>
-                                <td>@GraficoAtivo.NomeProvento(o.Tipo)</td>
+                                <td>@Formatacao.NomeProvento(o.Tipo)</td>
                                 <td class="wal-forte">@o.Ticker</td>
                                 <td class="wal-num">@o.ValorPorAcao.ToString("C4", Formatacao.PtBR)</td>
                                 <td class="wal-num wal-k">@o.Origem</td>
@@ -82,7 +82,7 @@
                                     @p.DataPagamento.ToString("dd/MM/yyyy")
                                 </td>
                                 <td>
-                                    <span class="wal-quadrado" style="background:@CorTipo(p.Tipo)"></span>@GraficoAtivo.NomeProvento(p.Tipo)
+                                    <span class="wal-quadrado" style="background:@GraficoProventos.Cor(p.Tipo)"></span>@Formatacao.NomeProvento(p.Tipo)
                                     @if (p.Corrigido)
                                     {
                                         <MudTooltip Text="Corrigido por você"><MudIcon Icon="@Icons.Material.Outlined.EditNote" Size="Size.Small" Class="wal-dica" /></MudTooltip>
@@ -137,12 +137,6 @@
     [Parameter] public EventCallback<int> OnRestaurar { get; set; }
 
     private const int PorPagina = 20;
-    private static readonly (TipoProvento Tipo, string Nome, string Cor)[] Tipos =
-    [
-        (TipoProvento.Dividendo, "Dividendos", "#2a78d6"),
-        (TipoProvento.JCP, "JCP", "#eb6834"),
-        (TipoProvento.Rendimento, "Rendimentos", "#1baf7a")
-    ];
 
     private string? busca;
     private TipoProvento? tipo;
@@ -155,7 +149,7 @@
     private List<ProventoRecebidoResponse> Filtrados => Proventos
         .Where(p => tipo is null || p.Tipo == tipo)
         .Where(p => ano is null || p.DataPagamento.Year == ano)
-        .Where(p => string.IsNullOrWhiteSpace(busca) || p.Ticker.Contains(busca.Trim(), StringComparison.OrdinalIgnoreCase))
+        .Where(p => Busca.Encontra(busca, p.Ticker))
         .ToList();
 
     private IEnumerable<ProventoRecebidoResponse> PaginaAtual => Filtrados.Skip((pagina - 1) * PorPagina).Take(PorPagina);
@@ -168,5 +162,4 @@
         if (pagina > paginas) pagina = paginas;
     }
 
-    private static string CorTipo(TipoProvento t) => Tipos.First(x => x.Tipo == t).Cor;
 }

@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -259,7 +260,7 @@ public partial class AtivoService(
         await db.CotacoesHistoricas.AsNoTracking()
             .Where(c => c.AtivoId == ativoId && c.Data <= data)
             .OrderByDescending(c => c.Data)
-            .Select(c => new CotacaoResponse(c.Data, c.Abertura, c.Maxima, c.Minima, c.Fechamento, c.Volume))
+            .Select(ParaCotacao)
             .FirstOrDefaultAsync();
 
     public async Task<ResultadoOperacao<List<CotacaoResponse>>> ObterCotacoesAsync(int ativoId, string? periodo)
@@ -290,7 +291,7 @@ public partial class AtivoService(
 
         var cotacoes = await query
             .OrderBy(c => c.Data)
-            .Select(c => new CotacaoResponse(c.Data, c.Abertura, c.Maxima, c.Minima, c.Fechamento, c.Volume))
+            .Select(ParaCotacao)
             .ToListAsync();
 
         return ResultadoOperacao<List<CotacaoResponse>>.Ok(cotacoes);
@@ -301,9 +302,13 @@ public partial class AtivoService(
         if (string.IsNullOrWhiteSpace(nome))
             return "Informe o nome do ativo.";
         if (!Enum.IsDefined(tipo))
-            return "Tipo de ativo inválido (use Ação, ETF, FII ou Tesouro).";
+            return "Tipo de ativo inválido (use Ação, ETF, FII, BDR ou Tesouro).";
         return null;
     }
+
+    // Expressão (não método): o EF traduz para SQL e busca só as colunas usadas
+    private static readonly Expression<Func<CotacaoHistorica, CotacaoResponse>> ParaCotacao =
+        c => new CotacaoResponse(c.Data, c.Abertura, c.Maxima, c.Minima, c.Fechamento, c.Volume);
 
     private static AtivoResponse ParaResponse(Ativo ativo) =>
         new(ativo.Id, ativo.Ticker, ativo.Nome, ativo.Tipo, ativo.EstaAtivo, ativo.DataCadastro, ativo.Categoria);

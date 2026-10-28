@@ -52,5 +52,5 @@
     };
 
     private static string Descricao(EventoCorporativoAtivoResponse e) =>
-        GraficoAtivo.DescricaoEvento(new EventoCorporativoResponse(e.Data, e.Tipo, e.Numerador, e.Denominador));
+        Formatacao.DescricaoEvento(e.Tipo, e.Numerador, e.Denominador);
 }

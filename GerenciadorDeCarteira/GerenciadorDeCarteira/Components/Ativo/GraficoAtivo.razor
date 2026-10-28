@@ -170,7 +170,7 @@
             foreach (var p in Detalhe.Proventos)
             {
                 var data = p.DataCom ?? p.DataPagamento;
-                var texto = $"{NomeProvento(p.Tipo)} de {Formatacao.Moeda(p.ValorPorAcao)}/ação" +
+                var texto = $"{Formatacao.NomeProvento(p.Tipo)} de {Formatacao.Moeda(p.ValorPorAcao)}/ação" +
                             (Mascarar ? "" : $" ({Formatacao.Moeda(p.Valor)})") + $" — data com {data:dd/MM/yyyy}";
                 lista.Add(new(Indice(data), "provento", texto));
             }
@@ -178,27 +178,9 @@
         if (marcadores.Contains("evento"))
         {
             foreach (var e in Detalhe.EventosCorporativos)
-                lista.Add(new(Indice(e.Data), "evento", $"{DescricaoEvento(e)} em {e.Data:dd/MM/yyyy}"));
+                lista.Add(new(Indice(e.Data), "evento", $"{Formatacao.DescricaoEvento(e.Tipo, e.Numerador, e.Denominador)} em {e.Data:dd/MM/yyyy}"));
         }
         return lista.Where(m => m.Indice >= 0).ToList();
-    }
-
-    public static string NomeProvento(TipoProvento tipo) => tipo switch
-    {
-        TipoProvento.JCP => "JCP",
-        TipoProvento.Rendimento => "Rendimento",
-        _ => "Dividendo"
-    };
-
-    public static string DescricaoEvento(EventoCorporativoResponse e)
-    {
-        var proporcao = $"{e.Numerador.ToString("0.####", Formatacao.PtBR)}:{e.Denominador.ToString("0.####", Formatacao.PtBR)}";
-        return e.Tipo switch
-        {
-            TipoEventoCorporativo.Desdobramento => $"Desdobramento {proporcao}",
-            TipoEventoCorporativo.Grupamento => $"Grupamento {proporcao}",
-            _ => $"Bonificação de {Formatacao.PercentualSimples(e.Variacao)} ({proporcao})"
-        };
     }
 
     public async ValueTask DisposeAsync()

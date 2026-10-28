@@ -37,7 +37,7 @@
                             <td class="wal-num wal-forte">@Formatacao.Moeda(p.Recebido, Mascarar)</td>
                             <td class="wal-num wal-sec">
                                 <span class="wal-peso">
-                                    <span class="wal-barra-trilho"><span style="width:@Largura(p.Recebido, maior);background:#2a78d6"></span></span>
+                                    <span class="wal-barra-trilho"><span style="width:@Formatacao.LarguraCss(p.Recebido, maior);background:#2a78d6"></span></span>
                                     @Formatacao.PercentualSimples(p.Percentual)
                                 </span>
                             </td>
@@ -57,7 +57,4 @@
     [Parameter] public bool Mascarar { get; set; }
 
     [Parameter] public string? Class { get; set; }
-
-    private static string Largura(decimal valor, decimal maior) =>
-        (maior > 0 ? valor / maior * 100 : 0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
 }

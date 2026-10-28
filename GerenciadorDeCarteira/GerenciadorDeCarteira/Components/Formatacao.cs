@@ -34,6 +34,48 @@ public static class Formatacao
 
     public const string ValorOculto = "R$ •••••";
 
+    /// <summary>
+    /// Tamanho de uma barra em CSS ("42.5%"), proporcional ao maior valor da lista. Ponto decimal invariante:
+    /// em pt-BR a vírgula quebraria o CSS. <paramref name="minimo"/> deixa barras pequenas ainda visíveis.
+    /// </summary>
+    public static string LarguraCss(decimal valor, decimal maior, decimal minimo = 0) =>
+        Math.Max(maior > 0 ? Math.Abs(valor) / maior * 100 : 0, minimo).ToString("0.#", CultureInfo.InvariantCulture) + "%";
+
+    private static readonly string[] NomesMes = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+    /// <summary>"jan/26", ou só "jan" sem o ano. Sem o ponto que a cultura pt-BR coloca na abreviação.</summary>
+    public static string MesCurto(DateOnly mes, bool comAno = true) =>
+        comAno ? $"{NomesMes[mes.Month - 1]}/{mes.Year % 100:00}" : NomesMes[mes.Month - 1];
+
+    /// <summary>
+    /// Rótulo do eixo X de um gráfico mensal. Até 13 meses, todos ("jan", "fev"...); com mais, um por ano (janeiro)
+    /// e o primeiro mês, se ele não ficar colado no janeiro seguinte.
+    /// </summary>
+    public static string RotuloEixoMensal(DateOnly mes, int indice, int total) =>
+        total <= 13 ? MesCurto(mes, comAno: false)
+        : mes.Month == 1 || (indice == 0 && mes.Month <= 10) ? MesCurto(mes)
+        : string.Empty;
+
+    /// <summary>Nome de um provento no singular ("Dividendo", "JCP", "Rendimento").</summary>
+    public static string NomeProvento(TipoProvento tipo) => tipo switch
+    {
+        TipoProvento.JCP => "JCP",
+        TipoProvento.Rendimento => "Rendimento",
+        _ => "Dividendo"
+    };
+
+    /// <summary>"Desdobramento 2:1", "Grupamento 1:10", "Bonificação de 10,0% (11:10)".</summary>
+    public static string DescricaoEvento(TipoEventoCorporativo tipo, decimal numerador, decimal denominador)
+    {
+        var proporcao = $"{numerador.ToString("0.####", PtBR)}:{denominador.ToString("0.####", PtBR)}";
+        return tipo switch
+        {
+            TipoEventoCorporativo.Desdobramento => $"Desdobramento {proporcao}",
+            TipoEventoCorporativo.Grupamento => $"Grupamento {proporcao}",
+            _ => $"Bonificação de {PercentualSimples(numerador / denominador - 1)} ({proporcao})"
+        };
+    }
+
     public static string CorGanhoPerda(decimal? valor) => valor switch
     {
         > 0 => "wal-ganho",

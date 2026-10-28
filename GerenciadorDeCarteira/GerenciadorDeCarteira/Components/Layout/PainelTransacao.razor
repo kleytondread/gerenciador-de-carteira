@@ -105,12 +105,12 @@
 
     private void AoSolicitar(PainelTransacaoEstado.Pedido pedido) => InvokeAsync(async () =>
     {
-        await PrepararAsync(pedido);
-        aberto = true;
+        aberto = await PrepararAsync(pedido);
         StateHasChanged();
     });
 
-    private async Task PrepararAsync(PainelTransacaoEstado.Pedido pedido)
+    /// <summary>Preenche o formulário; falso quando não dá para abrir (transação apagada em outra aba, por exemplo).</summary>
+    private async Task<bool> PrepararAsync(PainelTransacaoEstado.Pedido pedido)
     {
         erro = null;
         await using var scope = ScopeFactory.CreateAsyncScope();
@@ -120,12 +120,11 @@
 
         if (pedido.MovimentacaoId is int id)
         {
-            var mov = (await scope.ServiceProvider.GetRequiredService<IMovimentacaoService>().ListarAsync())
-                .FirstOrDefault(m => m.Id == id);
+            var mov = (await scope.ServiceProvider.GetRequiredService<IMovimentacaoService>().ObterAsync(id)).Valor;
             if (mov is null)
             {
                 Snackbar.Add("Transação não encontrada.", Severity.Error);
-                return;
+                return false;
             }
             editandoId = id;
             tipo = mov.Tipo;
@@ -146,13 +145,11 @@
             taxas = 0;
         }
         await AtualizarContextoAsync();
+        return true;
     }
 
     private Task<IEnumerable<AtivoResponse>> BuscarAtivos(string? texto, CancellationToken _) =>
-        Task.FromResult(string.IsNullOrWhiteSpace(texto)
-            ? ativos.AsEnumerable()
-            : ativos.Where(a => a.Ticker.Contains(texto.Trim(), StringComparison.OrdinalIgnoreCase) ||
-                                a.Nome.Contains(texto.Trim(), StringComparison.OrdinalIgnoreCase)));
+        Task.FromResult(ativos.Where(a => Busca.Encontra(texto, a.Ticker, a.Nome)));
 
     // Fechamento da data (sugestão de preço), quantidade disponível e preço médio na data (para a venda)
     private async Task AtualizarContextoAsync()

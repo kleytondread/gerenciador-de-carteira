@@ -16,8 +16,8 @@
                 {
                     <li>
                         <a href="posicoes/@c.AtivoId" class="wal-forte">@c.Ticker</a>
-                        <span class="wal-div-neg">@if (c.Resultado < 0) { <span style="width:@Largura(c.Resultado)"></span> }</span>
-                        <span class="wal-div-pos">@if (c.Resultado > 0) { <span style="width:@Largura(c.Resultado)"></span> }</span>
+                        <span class="wal-div-neg">@if (c.Resultado < 0) { <span style="width:@Formatacao.LarguraCss(c.Resultado, maior)"></span> }</span>
+                        <span class="wal-div-pos">@if (c.Resultado > 0) { <span style="width:@Formatacao.LarguraCss(c.Resultado, maior)"></span> }</span>
                         <span class="wal-num @Formatacao.CorGanhoPerda(c.Resultado)">@Formatacao.MoedaComSinal(c.Resultado, Mascarar)</span>
                     </li>
                 }
@@ -50,7 +50,4 @@
                 .ToList();
         maior = itens.Count > 0 ? itens.Max(c => Math.Abs(c.Resultado)) : 0;
     }
-
-    private string Largura(decimal resultado) =>
-        (maior > 0 ? Math.Abs(resultado) / maior * 100 : 0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
 }

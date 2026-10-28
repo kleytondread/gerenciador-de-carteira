@@ -1,13 +1,11 @@
 @page "/posicoes"
-@inherits OwningComponentBase
-@inject PreferenciasExibicao Preferencias
-@inject NotificacoesCarteira Notificacoes
+@inherits PaginaCarteira
 @inject NavigationManager Nav
 
 <PageTitle>Posições - Gestor de Carteira B3</PageTitle>
 <SectionContent SectionName="@TituloPagina.Secao">Posições</SectionContent>
 
-@if (carregando)
+@if (Carregando)
 {
     <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Carregando posições" />
 }
@@ -171,7 +169,6 @@ else
 
     private enum Coluna { Ativo, Dia, Valor, Valorizacao, Resultado, UltimaVenda }
 
-    private bool carregando = true;
     private PainelPosicoesResponse? painel;
     private string aba = AbaAbertas;
     private string? busca;
@@ -181,7 +178,6 @@ else
     private bool decrescente = true;
 
     private bool EmCarteira => aba == AbaAbertas;
-    private bool Mascarar => Preferencias.Mascarar;
 
     private IEnumerable<TipoAtivo> ClassesPresentes => CoresSeries.OrdemClasses.Where(t => ContarClasse(t) > 0);
 
@@ -190,10 +186,7 @@ else
         : painel!.Encerradas.Count(e => e.Tipo == tipo);
 
     private bool Passa(string ticker, string nome, TipoAtivo tipo) =>
-        (classe is null || tipo == classe) &&
-        (string.IsNullOrWhiteSpace(busca) ||
-         ticker.Contains(busca.Trim(), StringComparison.OrdinalIgnoreCase) ||
-         nome.Contains(busca.Trim(), StringComparison.OrdinalIgnoreCase));
+        (classe is null || tipo == classe) && Busca.Encontra(busca, ticker, nome);
 
     private List<PosicaoDetalhadaResponse> AbertasFiltradas =>
         painel!.Abertas.Where(p => Passa(p.Ticker, p.Nome, p.Tipo)).ToList();
@@ -201,24 +194,8 @@ else
     private List<PosicaoEncerradaResponse> EncerradasFiltradas =>
         painel!.Encerradas.Where(e => Passa(e.Ticker, e.Nome, e.Tipo)).ToList();
 
-    protected override async Task OnInitializedAsync()
-    {
-        Preferencias.Mudou += AoMudarPreferencias;
-        Notificacoes.CarteiraAlterada += AoAlterarCarteira;
-        try
-        {
-            painel = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterPainelPosicoesAsync();
-        }
-        finally
-        {
-            carregando = false;
-        }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender) await Preferencias.CarregarAsync();
-    }
+    protected override async Task CarregarAsync() =>
+        painel = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterPainelPosicoesAsync();
 
     // ── Ordenação ────────────────────────────────────────────────────────
 
@@ -343,12 +320,7 @@ else
     private void Abrir(int ativoId) => Nav.NavigateTo($"posicoes/{ativoId}");
 
     // Barra proporcional ao maior peso da carteira
-    private string LarguraPeso(decimal? peso)
-    {
-        var maior = painel!.Abertas.Max(p => p.Peso ?? 0);
-        var fracao = maior > 0 ? (peso ?? 0) / maior : 0;
-        return (fracao * 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
-    }
+    private string LarguraPeso(decimal? peso) => Formatacao.LarguraCss(peso ?? 0, painel!.Abertas.Max(p => p.Peso ?? 0));
 
     // Quantidade truncada (sem arredondar): título do Tesouro com 2 casas, os demais inteiros
     private static string Quantidade(PosicaoDetalhadaResponse p) => p.Tipo == TipoAtivo.Tesouro
@@ -360,21 +332,5 @@ else
         if (inicio is not DateOnly a || fim is not DateOnly b) return "–";
         var meses = (b.Year - a.Year) * 12 + b.Month - a.Month;
         return meses >= 12 ? $"{meses / 12}a {meses % 12}m" : $"{Math.Max(meses, 0)}m";
-    }
-
-    private void AoMudarPreferencias() => InvokeAsync(StateHasChanged);
-
-    // Transação salva no painel lateral: recalcula as posições
-    private void AoAlterarCarteira() => InvokeAsync(async () =>
-    {
-        painel = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterPainelPosicoesAsync();
-        StateHasChanged();
-    });
-
-    protected override async ValueTask DisposeAsyncCore()
-    {
-        Preferencias.Mudou -= AoMudarPreferencias;
-        Notificacoes.CarteiraAlterada -= AoAlterarCarteira;
-        await base.DisposeAsyncCore();
     }
 }

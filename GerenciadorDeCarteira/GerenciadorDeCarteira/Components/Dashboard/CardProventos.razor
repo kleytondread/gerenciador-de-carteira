@@ -8,15 +8,20 @@
         <div class="wal-mini-barras" role="img" aria-label="Proventos recebidos por mês nos últimos 12 meses">
             @foreach (var m in Proventos12Meses)
             {
-                <span title="@($"{m.Inicio.ToString("MMM/yy", Formatacao.PtBR)}: {Formatacao.Moeda(m.Total, Mascarar)}")"
-                      style="height:@Altura(m.Total)"></span>
+                @* Mês sem provento ainda aparece como um traço (mínimo de 2%), para a régua de 12 meses ficar visível *@
+                <span title="@($"{Formatacao.MesCurto(m.Inicio)}: {Formatacao.Moeda(m.Total, Mascarar)}")"
+                      style="height:@Formatacao.LarguraCss(m.Total, maior, minimo: 2)"></span>
             }
         </div>
         <MudSimpleTable Dense="true" Elevation="0" Class="wal-tabela wal-tabela-compacta">
             <tbody>
-                <tr><td><span class="wal-quadrado" style="background:#2a78d6"></span>Dividendos</td><td class="wal-num">@Formatacao.Moeda(Proventos12Meses.Sum(m => m.Dividendos), Mascarar)</td></tr>
-                <tr><td><span class="wal-quadrado" style="background:#eb6834"></span>JCP</td><td class="wal-num">@Formatacao.Moeda(Proventos12Meses.Sum(m => m.Jcp), Mascarar)</td></tr>
-                <tr><td><span class="wal-quadrado" style="background:#1baf7a"></span>Rendimentos</td><td class="wal-num">@Formatacao.Moeda(Proventos12Meses.Sum(m => m.Rendimentos), Mascarar)</td></tr>
+                @foreach (var tipo in GraficoProventos.Tipos)
+                {
+                    <tr>
+                        <td><span class="wal-quadrado" style="background:@GraficoProventos.Cor(tipo)"></span>@GraficoProventos.Nome(tipo)</td>
+                        <td class="wal-num">@Formatacao.Moeda(Proventos12Meses.Sum(m => GraficoProventos.Valor(m, tipo)), Mascarar)</td>
+                    </tr>
+                }
                 <tr><td class="wal-forte">Total</td><td class="wal-num wal-forte">@Formatacao.Moeda(total, Mascarar)</td></tr>
                 <tr class="wal-linha-ref"><td>Média mensal</td><td class="wal-num">@Formatacao.Moeda(Proventos12Meses.Count > 0 ? total / Proventos12Meses.Count : 0, Mascarar)</td></tr>
             </tbody>
@@ -39,8 +44,4 @@
         total = Proventos12Meses.Sum(m => m.Total);
         maior = Proventos12Meses.Count > 0 ? Proventos12Meses.Max(m => m.Total) : 0;
     }
-
-    // Mês sem provento ainda aparece como um traço, para a régua de 12 meses ficar visível
-    private string Altura(decimal valor) =>
-        Math.Max(maior > 0 ? valor / maior * 100 : 0, 2).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
 }

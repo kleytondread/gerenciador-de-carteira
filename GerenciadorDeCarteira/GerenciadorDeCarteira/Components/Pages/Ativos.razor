@@ -1,7 +1,5 @@
 @page "/ativos"
-@* DbContext próprio por página — ver comentário em Home.razor *@
-@inherits OwningComponentBase
-@inject PreferenciasExibicao Preferencias
+@inherits PaginaCarteira
 @inject IDialogService Dialogos
 @inject ISnackbar Snackbar
 @inject IJSRuntime Js
@@ -11,7 +9,7 @@
 
 <MudTabs Elevation="0" ApplyEffectsToContainer="true" TabPanelsClass="pt-4" Class="wal-abas" @bind-ActivePanelIndex="aba">
     <MudTabPanel Text="Ativos">
-        @if (carregando)
+        @if (Carregando)
         {
             <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Carregando ativos" />
         }
@@ -94,7 +92,7 @@
                                                 @switch (a.Situacao)
                                                 {
                                                     case SituacaoNaCarteira.Aberta:
-                                                        @(Preferencias.Mascarar ? "•••" : Formatacao.QuantidadeCurta(a.Quantidade))
+                                                        @(Mascarar ? "•••" : Formatacao.QuantidadeCurta(a.Quantidade))
                                                         break;
                                                     case SituacaoNaCarteira.Encerrada:
                                                         <span class="wal-k">Encerrada</span>
@@ -200,7 +198,6 @@
     private sealed record InfoIndice(string Nome, string Descricao, string Fonte, bool Mensal, Func<decimal, string> Formatar);
 
     private int aba;
-    private bool carregando = true;
     private List<AtivoRastreadoResponse> ativos = [];
     private List<SituacaoIndiceResponse> indices = [];
     private string? busca;
@@ -212,12 +209,6 @@
     /// <summary>Rastreados que pararam de receber cotação (ex.: saíram da bolsa ou mudaram de ticker).</summary>
     private List<AtivoRastreadoResponse> Desatualizados => ativos.Where(a => a.Rastreando && a.Saude == SaudeCotacoes.Desatualizada).ToList();
 
-    protected override async Task OnInitializedAsync()
-    {
-        Preferencias.Mudou += AoMudarPreferencias;
-        await CarregarAsync();
-    }
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
@@ -226,27 +217,15 @@
         StateHasChanged();
     }
 
-    private async Task CarregarAsync()
+    // Também recarrega quando a carteira muda: "Na carteira" depende das transações
+    protected override async Task CarregarAsync()
     {
-        try
-        {
-            ativos = (await AtivoService.ObterRastreadosAsync()).OrderBy(a => a.Ticker).ToList();
-            indices = await ScopedServices.GetRequiredService<IIndicesReferenciaService>().ObterSituacaoAsync();
-        }
-        finally
-        {
-            carregando = false;
-        }
+        ativos = await AtivoService.ObterRastreadosAsync();
+        indices = await ScopedServices.GetRequiredService<IIndicesReferenciaService>().ObterSituacaoAsync();
     }
 
-    private IEnumerable<AtivoRastreadoResponse> Visiveis()
-    {
-        var termo = busca?.Trim();
-        return ativos.Where(a => Passa(a, filtro))
-            .Where(a => string.IsNullOrEmpty(termo)
-                || a.Ticker.Contains(termo, StringComparison.OrdinalIgnoreCase)
-                || a.Nome.Contains(termo, StringComparison.OrdinalIgnoreCase));
-    }
+    private IEnumerable<AtivoRastreadoResponse> Visiveis() =>
+        ativos.Where(a => Passa(a, filtro) && Busca.Encontra(busca, a.Ticker, a.Nome));
 
     private static bool Passa(AtivoRastreadoResponse a, Filtro f) => f switch
     {
@@ -322,7 +301,7 @@
         Snackbar.Add(ativo is null
             ? $"{ticker} cadastrado. O histórico está sendo baixado em segundo plano."
             : $"{ticker} atualizado.", Severity.Success);
-        await CarregarAsync();
+        await RecarregarAsync();
     }
 
     private async Task DefinirRastreamentoAsync(AtivoRastreadoResponse a, bool rastrear)
@@ -346,7 +325,7 @@
                 return;
             }
             Snackbar.Add(rastrear ? $"{a.Ticker} volta a ser atualizado na próxima sincronização." : $"{a.Ticker} pausado.", Severity.Normal);
-            await CarregarAsync();
+            await RecarregarAsync();
         }
         finally
         {
@@ -368,7 +347,7 @@
         foreach (var a in alvos)
             await AtivoService.DefinirRastreamentoAsync(a.Id, false);
         Snackbar.Add($"{alvos.Count} {(alvos.Count == 1 ? "ativo pausado" : "ativos pausados")}.", Severity.Normal);
-        await CarregarAsync();
+        await RecarregarAsync();
     }
 
     private void RecarregarHistorico(AtivoRastreadoResponse a)
@@ -393,13 +372,5 @@
     {
         taxaIpcaMais = Math.Clamp(pontos, 0, 20);
         await Js.InvokeVoidAsync("walPreferencias.definir", CoresSeries.ChaveTaxaIpcaMais, CoresSeries.GravarTaxaIpcaMais(taxaIpcaMais / 100));
-    }
-
-    private void AoMudarPreferencias() => InvokeAsync(StateHasChanged);
-
-    protected override async ValueTask DisposeAsyncCore()
-    {
-        Preferencias.Mudou -= AoMudarPreferencias;
-        await base.DisposeAsyncCore();
     }
 }

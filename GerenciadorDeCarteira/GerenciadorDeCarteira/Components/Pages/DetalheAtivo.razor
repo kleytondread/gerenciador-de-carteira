@@ -1,9 +1,6 @@
 @page "/posicoes/{Id:int}"
 @page "/ativos/{Id:int}"
-@* DbContext próprio por página — ver comentário em Home.razor *@
-@inherits OwningComponentBase
-@inject PreferenciasExibicao Preferencias
-@inject NotificacoesCarteira Notificacoes
+@inherits PaginaCarteira
 @inject PainelTransacaoEstado PainelEstado
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogos
@@ -13,7 +10,7 @@
     <span class="wal-trilha"><a href="posicoes">Posições</a><span aria-hidden="true">›</span>@(detalhe?.Ativo.Ticker ?? "Ativo")</span>
 </SectionContent>
 
-@if (carregando)
+@if (Carregando)
 {
     <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Carregando o ativo" />
 }
@@ -148,7 +145,7 @@ else
                             {
                                 <tr>
                                     <td class="wal-k">@e.Data.ToString("dd/MM/yyyy")</td>
-                                    <td><span class="wal-simbolo" style="color:#6250d6" aria-hidden="true">◆</span>@GraficoAtivo.DescricaoEvento(e)</td>
+                                    <td><span class="wal-simbolo" style="color:#6250d6" aria-hidden="true">◆</span>@Formatacao.DescricaoEvento(e.Tipo, e.Numerador, e.Denominador)</td>
                                 </tr>
                             }
                         </tbody>
@@ -162,7 +159,7 @@ else
             <CardPainel Titulo="Proventos" Subtitulo="valores brutos" Class="wal-s6" SemEspacamento="true">
                 <div class="wal-card-corpo">
                     <MudChart T="double" ChartType="ChartType.StackedBar" ChartSeries="@seriesProventos" ChartLabels="@anosProventos"
-                              ChartOptions="@opcoesProventos" Height="200px" Width="100%" MatchBoundsToSize="true" />
+                              ChartOptions="@GraficoProventos.Opcoes(seriesProventos, Mascarar)" Height="200px" Width="100%" MatchBoundsToSize="true" />
                 </div>
                 <div class="wal-rolagem">
                     <MudSimpleTable Dense="true" Elevation="0" Class="wal-tabela">
@@ -188,7 +185,7 @@ else
                                         }
                                         @pr.DataPagamento.ToString("dd/MM/yyyy")
                                     </td>
-                                    <td>@GraficoAtivo.NomeProvento(pr.Tipo)</td>
+                                    <td>@Formatacao.NomeProvento(pr.Tipo)</td>
                                     <td class="wal-num wal-sec">@(Mascarar ? "•••" : Formatacao.QuantidadeCurta(pr.Quantidade))</td>
                                     <td class="wal-num wal-sec">@pr.ValorPorAcao.ToString("C4", Formatacao.PtBR)</td>
                                     <td class="wal-num wal-forte">@Formatacao.Moeda(pr.Valor, Mascarar)</td>
@@ -255,59 +252,29 @@ else
     private const int LinhasProventos = 8;
     private const int LinhasTransacoes = 8;
 
-    private bool carregando = true;
     private bool sincronizando;
     private int? idCarregado;
     private DetalheAtivoResponse? detalhe;
     private List<ChartSeries<double>> seriesProventos = [];
     private string[] anosProventos = [];
-    private readonly StackedBarChartOptions opcoesProventos = new()
-    {
-        ChartPalette = ["#2a78d6", "#eb6834", "#1baf7a"],
-        YAxisFormat = "N0"
-    };
 
-    private bool Mascarar => Preferencias.Mascarar;
-
-    protected override void OnInitialized()
-    {
-        Preferencias.Mudou += AoMudarPreferencias;
-        Notificacoes.CarteiraAlterada += AoAlterarCarteira;
-    }
+    // A carga depende do Id da rota: acontece em OnParametersSetAsync, não ao iniciar
+    protected override Task OnInitializedAsync() => Task.CompletedTask;
 
     protected override async Task OnParametersSetAsync()
     {
         // Também roda em re-renders do pai sem troca de ativo — só recarrega se o Id mudou
         if (idCarregado == Id) return;
         idCarregado = Id;
-
-        carregando = true;
-        await CarregarAsync();
-        carregando = false;
+        await CarregarComProgressoAsync();
     }
 
-    // Transação salva no painel lateral: recarrega sem a barra de carregamento, para a tela não piscar
-    private void AoAlterarCarteira() => InvokeAsync(async () =>
-    {
-        await CarregarAsync();
-        StateHasChanged();
-    });
-
-    private async Task CarregarAsync()
+    protected override async Task CarregarAsync()
     {
         detalhe = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterDetalheAtivoAsync(Id);
-        if (detalhe is not null)
-        {
-            anosProventos = detalhe.ProventosPorAno.Select(a => a.Inicio.Year.ToString()).ToArray();
-            ChartSeries<double> Serie(string nome, Func<ProventosPeriodoResponse, decimal> valor) =>
-                new() { Name = nome, Data = new ChartData<double>(detalhe.ProventosPorAno.Select(a => (double)Math.Round(valor(a), 2)).ToList()) };
-            seriesProventos = [Serie("Dividendos", a => a.Dividendos), Serie("JCP", a => a.Jcp), Serie("Rendimentos", a => a.Rendimentos)];
-        }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender) await Preferencias.CarregarAsync();
+        if (detalhe is null) return;
+        anosProventos = detalhe.ProventosPorAno.Select(a => a.Inicio.Year.ToString()).ToArray();
+        seriesProventos = GraficoProventos.Series(detalhe.ProventosPorAno, GraficoProventos.Valor);
     }
 
     private async Task AlternarRastreamentoAsync()
@@ -330,7 +297,7 @@ else
             return;
         }
         Snackbar.Add(pausar ? $"{detalhe.Ativo.Ticker} pausado." : $"{detalhe.Ativo.Ticker} volta a ser atualizado na próxima sincronização.", Severity.Normal);
-        await CarregarAsync();
+        await RecarregarAsync();
     }
 
     // Recarrega cotações, proventos e eventos desde 2020 em segundo plano (mesmo job do cadastro)
@@ -359,13 +326,4 @@ else
         >= 1_000 => $"{(volume / 1_000m).ToString("0.#", Formatacao.PtBR)} mil",
         _ => volume.ToString(Formatacao.PtBR)
     };
-
-    private void AoMudarPreferencias() => InvokeAsync(StateHasChanged);
-
-    protected override async ValueTask DisposeAsyncCore()
-    {
-        Preferencias.Mudou -= AoMudarPreferencias;
-        Notificacoes.CarteiraAlterada -= AoAlterarCarteira;
-        await base.DisposeAsyncCore();
-    }
 }

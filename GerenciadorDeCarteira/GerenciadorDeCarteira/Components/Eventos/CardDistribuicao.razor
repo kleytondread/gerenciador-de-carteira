@@ -19,11 +19,11 @@
         @{ var dados = Calcular(); }
         <div class="wal-distribuicao">
             <div class="wal-distribuicao-resumo">
-                @foreach (var (nome, cor, valor) in dados.PorTipo)
+                @foreach (var tipo in GraficoProventos.Tipos)
                 {
-                    <div class="wal-distribuicao-tipo" style="border-color:@cor">
-                        <span class="wal-k">@nome</span>
-                        <span class="wal-forte">@Formatacao.Moeda(valor, Mascarar)</span>
+                    <div class="wal-distribuicao-tipo" style="border-color:@GraficoProventos.Cor(tipo)">
+                        <span class="wal-k">@GraficoProventos.Nome(tipo)</span>
+                        <span class="wal-forte">@Formatacao.Moeda(dados.PorTipo[tipo], Mascarar)</span>
                     </div>
                 }
                 <MudDivider />
@@ -39,7 +39,7 @@
             </div>
             <div class="wal-distribuicao-grafico">
                 <MudChart T="double" ChartType="ChartType.StackedBar" ChartSeries="@dados.Series" ChartLabels="@dados.Rotulos"
-                          ChartOptions="@Opcoes(dados)" Height="300px" Width="100%" MatchBoundsToSize="true" />
+                          ChartOptions="@dados.Opcoes" Height="300px" Width="100%" MatchBoundsToSize="true" />
             </div>
         </div>
     </ChildContent>
@@ -57,14 +57,13 @@
 
     private const string PeriodoInicio = "Início";
     private static readonly string[] Periodos = ["12M", "24M", "60M", PeriodoInicio];
-    private static readonly string[] NomesMes = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
     private string periodo = "12M";
     private string agrupamento = "mes";
 
     private sealed record Distribuicao(
-        List<ChartSeries<double>> Series, string[] Rotulos, List<(string Nome, string Cor, decimal Valor)> PorTipo,
-        decimal Total, decimal MediaMensal, decimal? VariacaoAnterior, int Meses);
+        List<ChartSeries<double>> Series, string[] Rotulos, StackedBarChartOptions Opcoes,
+        IReadOnlyDictionary<TipoProvento, decimal> PorTipo, decimal Total, decimal MediaMensal, decimal? VariacaoAnterior, int Meses);
 
     // Mais de dois anos em barras mensais ficam finas demais: troca para anual (dá para voltar)
     private void TrocarPeriodo(string novo)
@@ -98,19 +97,13 @@
         DateOnly Grupo(DateOnly d) => agrupamento == "mes" ? new DateOnly(d.Year, d.Month, 1) : new DateOnly(d.Year, 1, 1);
         var porGrupo = noPeriodo.ToLookup(p => Grupo(p.DataPagamento));
 
-        ChartSeries<double> Serie(string nome, TipoProvento tipo) => new()
-        {
-            Name = nome,
-            // Em centavos: o tooltip mostra o número cru
-            Data = new ChartData<double>(grupos.Select(g => (double)Math.Round(porGrupo[g].Where(p => p.Tipo == tipo).Sum(p => p.Valor), 2)).ToList())
-        };
-
-        // Com muitas barras mensais, um rótulo por ano (em janeiro) e no primeiro mês, se ele não ficar colado no janeiro seguinte
+        var series = GraficoProventos.Series(grupos, (g, tipo) => porGrupo[g].Where(p => p.Tipo == tipo).Sum(p => p.Valor));
         var rotulos = grupos.Select((g, i) => agrupamento == "ano"
             ? g.Year.ToString()
-            : grupos.Count <= 13 || g.Month == 1 || (i == 0 && g.Month <= 10) ? $"{NomesMes[g.Month - 1]}/{g.Year % 100:00}" : "").ToArray();
+            : grupos.Count <= 13 ? Formatacao.MesCurto(g) : Formatacao.RotuloEixoMensal(g, i, grupos.Count)).ToArray();
+        var opcoes = GraficoProventos.Opcoes(series, Mascarar);
 
-        decimal Soma(TipoProvento tipo) => noPeriodo.Where(p => p.Tipo == tipo).Sum(p => p.Valor);
+        var porTipo = GraficoProventos.Tipos.ToDictionary(t => t, t => noPeriodo.Where(p => p.Tipo == t).Sum(p => p.Valor));
         var total = noPeriodo.Sum(p => p.Valor);
 
         decimal? variacao = null;
@@ -122,33 +115,6 @@
             if (totalAnterior > 0 && primeiro <= inicio.AddMonths(-meses)) variacao = total / totalAnterior - 1;
         }
 
-        return new Distribuicao(
-            [Serie("Dividendos", TipoProvento.Dividendo), Serie("JCP", TipoProvento.JCP), Serie("Rendimentos", TipoProvento.Rendimento)],
-            rotulos,
-            [("Dividendos", Cores[0], Soma(TipoProvento.Dividendo)), ("JCP", Cores[1], Soma(TipoProvento.JCP)), ("Rendimentos", Cores[2], Soma(TipoProvento.Rendimento))],
-            total, total / meses, variacao, meses);
-    }
-
-    private static readonly string[] Cores = ["#2a78d6", "#eb6834", "#1baf7a"];
-
-    private StackedBarChartOptions Opcoes(Distribuicao dados)
-    {
-        // Linhas a cada R$ 500; nas barras anuais altas (mais de R$ 5.000) a cada R$ 1.000, para não amontoar o eixo
-        var maior = dados.Rotulos.Length == 0 ? 0
-            : Enumerable.Range(0, dados.Rotulos.Length).Max(i => dados.Series.Sum(s => s.Data.Values.ElementAt(i)));
-        return new()
-        {
-            ChartPalette = Cores,
-            // O resumo ao lado já faz a legenda; com valores ocultos, o eixo e o tooltip não mostram R$
-            ShowLegend = false,
-            ShowToolTips = !Mascarar,
-            // O MudChart não formata o número do tooltip; o valor já vem arredondado em centavos
-            TooltipTitleFormat = "R$ {{Y_VALUE}}",
-            TooltipSubtitleFormat = "{{SERIES_NAME}}",
-            YAxisTicks = maior > 5000 ? 1000 : 500,
-            // Sem limite baixo: o MudChart "afinaria" as linhas e mudaria o intervalo
-            MaxNumYAxisTicks = 40,
-            YAxisToStringFunc = v => Mascarar ? "" : $"R$ {v.ToString("N0", Formatacao.PtBR)}"
-        };
+        return new Distribuicao(series, rotulos, opcoes, porTipo, total, total / meses, variacao, meses);
     }
 }

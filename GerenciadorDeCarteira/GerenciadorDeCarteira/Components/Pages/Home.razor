@@ -1,14 +1,10 @@
 @page "/"
-@* OwningComponentBase: DbContext próprio por página (e descartado ao sair dela), em vez de um único
-   DbContext compartilhado pelo circuito inteiro do Blazor Server. *@
-@inherits OwningComponentBase
-@inject PreferenciasExibicao Preferencias
-@inject NotificacoesCarteira Notificacoes
+@inherits PaginaCarteira
 
 <PageTitle>Dashboard - Gestor de Carteira B3</PageTitle>
 <SectionContent SectionName="@TituloPagina.Secao">Dashboard</SectionContent>
 
-@if (carregando)
+@if (Carregando)
 {
     <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Carregando o dashboard" />
 }
@@ -27,53 +23,19 @@ else
 {
     @* Ordem pensada para a grade: em Full HD 8+4 | 7+5 | 12 | 8+4; em ultrawide os cards menores sobem (ver app.css) *@
     <div class="wal-painel">
-        <GraficoEvolucao Serie="dashboard.Serie" Mascarar="Preferencias.Mascarar" Class="wal-s8 wal-xl9" />
-        <CardAlocacao Posicoes="dashboard.Posicoes" Mascarar="Preferencias.Mascarar" Class="wal-s4 wal-xl3" />
-        <CardResumoPortfolio Resumo="dashboard.Resumo" Mascarar="Preferencias.Mascarar" Class="wal-s7 wal-xl5" />
-        <CardContribuicao Contribuicao="dashboard.Contribuicao12Meses" Mascarar="Preferencias.Mascarar" Class="wal-s5 wal-xl4" />
-        <CardResultadoMensal ResultadoMensal="dashboard.ResultadoMensal" Mascarar="Preferencias.Mascarar" Class="wal-s12" />
+        <GraficoEvolucao Serie="dashboard.Serie" Mascarar="Mascarar" Class="wal-s8 wal-xl9" />
+        <CardAlocacao Posicoes="dashboard.Posicoes" Mascarar="Mascarar" Class="wal-s4 wal-xl3" />
+        <CardResumoPortfolio Resumo="dashboard.Resumo" Mascarar="Mascarar" Class="wal-s7 wal-xl5" />
+        <CardContribuicao Contribuicao="dashboard.Contribuicao12Meses" Mascarar="Mascarar" Class="wal-s5 wal-xl4" />
+        <CardResultadoMensal ResultadoMensal="dashboard.ResultadoMensal" Mascarar="Mascarar" Class="wal-s12" />
         <GraficoDrawdown Drawdown="dashboard.Drawdown" Class="wal-s8 wal-xl12" />
-        <CardProventos Proventos12Meses="dashboard.Proventos12Meses" Mascarar="Preferencias.Mascarar" Class="wal-s4 wal-xl3" />
+        <CardProventos Proventos12Meses="dashboard.Proventos12Meses" Mascarar="Mascarar" Class="wal-s4 wal-xl3" />
     </div>
 }
 
 @code {
-    private bool carregando = true;
     private DashboardResponse? dashboard;
 
-    protected override async Task OnInitializedAsync()
-    {
-        Preferencias.Mudou += AoMudarPreferencias;
-        Notificacoes.CarteiraAlterada += AoAlterarCarteira;
-        try
-        {
-            dashboard = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterDashboardAsync();
-        }
-        finally
-        {
-            carregando = false;
-        }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        // Com os valores ocultos salvos, os cards já saem mascarados até a preferência ser lida
-        if (firstRender) await Preferencias.CarregarAsync();
-    }
-
-    private void AoMudarPreferencias() => InvokeAsync(StateHasChanged);
-
-    // Transação salva no painel lateral: recalcula tudo
-    private void AoAlterarCarteira() => InvokeAsync(async () =>
-    {
+    protected override async Task CarregarAsync() =>
         dashboard = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterDashboardAsync();
-        StateHasChanged();
-    });
-
-    protected override async ValueTask DisposeAsyncCore()
-    {
-        Preferencias.Mudou -= AoMudarPreferencias;
-        Notificacoes.CarteiraAlterada -= AoAlterarCarteira;
-        await base.DisposeAsyncCore();
-    }
 }

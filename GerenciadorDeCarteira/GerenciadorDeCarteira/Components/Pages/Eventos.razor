@@ -1,15 +1,12 @@
 @page "/eventos"
-@* DbContext próprio por página — ver comentário em Home.razor *@
-@inherits OwningComponentBase
-@inject PreferenciasExibicao Preferencias
-@inject NotificacoesCarteira Notificacoes
+@inherits PaginaCarteira
 @inject IDialogService Dialogos
 @inject ISnackbar Snackbar
 
 <PageTitle>Eventos - Gestor de Carteira B3</PageTitle>
 <SectionContent SectionName="@TituloPagina.Secao">Eventos</SectionContent>
 
-@if (carregando)
+@if (Carregando)
 {
     <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Carregando eventos" />
 }
@@ -24,61 +21,33 @@ else if (painel is null)
 else
 {
     <div class="wal-painel">
-        <CardDistribuicao Proventos="painel.Proventos" DataReferencia="painel.DataReferencia" Mascarar="Preferencias.Mascarar" Class="wal-s12" />
-        <CardPagadores Pagadores="painel.Pagadores12Meses" Mascarar="Preferencias.Mascarar" Class="wal-s7" />
+        <CardDistribuicao Proventos="painel.Proventos" DataReferencia="painel.DataReferencia" Mascarar="Mascarar" Class="wal-s12" />
+        <CardPagadores Pagadores="painel.Pagadores12Meses" Mascarar="Mascarar" Class="wal-s7" />
         <CardEventosCorporativos Eventos="painel.EventosCorporativos" Class="wal-s5" />
-        <CardHistoricoProventos Proventos="painel.Proventos" Ocultos="ocultos" Mascarar="Preferencias.Mascarar" Class="wal-s12"
+        <CardHistoricoProventos Proventos="painel.Proventos" Ocultos="ocultos" Mascarar="Mascarar" Class="wal-s12"
                                 OnLancar="LancarAsync" OnEditar="EditarAsync" OnExcluir="ExcluirAsync" OnRestaurar="RestaurarAsync" />
     </div>
 }
 
 @code {
-    private bool carregando = true;
     private PainelEventosResponse? painel;
     private List<ProventoResponse> ocultos = [];
 
     private IAnaliseCarteiraService Analise => ScopedServices.GetRequiredService<IAnaliseCarteiraService>();
     private IProventoService ProventoService => ScopedServices.GetRequiredService<IProventoService>();
 
-    protected override async Task OnInitializedAsync()
-    {
-        Preferencias.Mudou += AoMudarPreferencias;
-        Notificacoes.CarteiraAlterada += AoAlterarCarteira;
-        try
-        {
-            await CarregarAsync();
-        }
-        finally
-        {
-            carregando = false;
-        }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender) await Preferencias.CarregarAsync();
-    }
-
-    private async Task CarregarAsync()
+    protected override async Task CarregarAsync()
     {
         painel = await Analise.ObterPainelEventosAsync();
         ocultos = await ProventoService.ListarOcultosAsync();
     }
 
     // Proventos mexem no resultado: o aviso faz esta tela e a barra superior recarregarem
-    private Task AposAlterarAsync(string mensagem)
+    private void AposAlterar(string mensagem)
     {
         Notificacoes.NotificarAlteracao();
         Snackbar.Add(mensagem, Severity.Success);
-        return Task.CompletedTask;
     }
-
-    // Provento alterado aqui ou transação salva no painel lateral
-    private void AoAlterarCarteira() => InvokeAsync(async () =>
-    {
-        await CarregarAsync();
-        StateHasChanged();
-    });
 
     private async Task LancarAsync()
     {
@@ -109,7 +78,7 @@ else
             new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
         var resultado = await dialogo.Result;
         if (resultado is { Canceled: false })
-            await AposAlterarAsync(provento is null ? "Provento lançado." : "Provento corrigido.");
+            AposAlterar(provento is null ? "Provento lançado." : "Provento corrigido.");
     }
 
     private async Task<string?> SalvarAsync(ProventoResponse? provento, DialogProvento.DadosProvento dados)
@@ -132,8 +101,8 @@ else
         var confirmado = await Dialogos.ShowMessageBoxAsync(
             manual ? "Excluir provento?" : "Ocultar provento?",
             manual
-                ? $"O {GraficoAtivo.NomeProvento(p.Tipo)} de {p.Ticker} pago em {p.DataPagamento:dd/MM/yyyy} será apagado."
-                : $"O {GraficoAtivo.NomeProvento(p.Tipo)} de {p.Ticker} pago em {p.DataPagamento:dd/MM/yyyy} deixa de contar no resultado e nos gráficos. Dá para restaurar depois.",
+                ? $"O {Formatacao.NomeProvento(p.Tipo)} de {p.Ticker} pago em {p.DataPagamento:dd/MM/yyyy} será apagado."
+                : $"O {Formatacao.NomeProvento(p.Tipo)} de {p.Ticker} pago em {p.DataPagamento:dd/MM/yyyy} deixa de contar no resultado e nos gráficos. Dá para restaurar depois.",
             yesText: manual ? "Excluir" : "Ocultar", cancelText: "Cancelar");
         if (confirmado != true) return;
 
@@ -143,22 +112,13 @@ else
             Snackbar.Add(resultado.Erro ?? "Não foi possível excluir.", Severity.Error);
             return;
         }
-        await AposAlterarAsync(manual ? "Provento excluído." : "Provento ocultado.");
+        AposAlterar(manual ? "Provento excluído." : "Provento ocultado.");
     }
 
     private async Task RestaurarAsync(int proventoId)
     {
         var resultado = await ProventoService.RestaurarAsync(proventoId);
-        if (resultado.Sucesso) await AposAlterarAsync("Provento restaurado.");
+        if (resultado.Sucesso) AposAlterar("Provento restaurado.");
         else Snackbar.Add(resultado.Erro ?? "Não foi possível restaurar.", Severity.Error);
-    }
-
-    private void AoMudarPreferencias() => InvokeAsync(StateHasChanged);
-
-    protected override async ValueTask DisposeAsyncCore()
-    {
-        Preferencias.Mudou -= AoMudarPreferencias;
-        Notificacoes.CarteiraAlterada -= AoAlterarCarteira;
-        await base.DisposeAsyncCore();
     }
 }

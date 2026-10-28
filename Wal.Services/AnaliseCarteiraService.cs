@@ -51,8 +51,7 @@ public class AnaliseCarteiraService(
         var ativos = await db.Ativos.AsNoTracking().ToDictionaryAsync(a => a.Id);
         var encerradas = Encerradas(motor, registradas, ativos);
 
-        var fim = motor.Pontos.Count > 0 ? motor.Pontos[^1].Data : DateOnly.FromDateTime(DateTime.Today);
-        var desde = fim.AddDays(-30);
+        var desde = UltimoDia(motor).AddDays(-30);
         var ids = abertas.Select(p => p.AtivoId).ToList();
         var tendencia = (await db.CotacoesHistoricas.AsNoTracking()
                 .Where(c => ids.Contains(c.AtivoId) && c.Data > desde)
@@ -108,7 +107,7 @@ public class AnaliseCarteiraService(
             .ToList();
         var proventosPorAno = recebidos.Count == 0
             ? []
-            : ProventosPorPeriodo(motor.ProventosRecebidos.Where(p => p.AtivoId == ativoId),
+            : ProventosPorPeriodo(recebidos,
                 new DateOnly(recebidos.Min(p => p.DataPagamento).Year, 1, 1),
                 new DateOnly(recebidos.Max(p => p.DataPagamento).Year, 12, 31),
                 AgrupamentoPeriodo.Ano);
@@ -120,12 +119,9 @@ public class AnaliseCarteiraService(
             .Select(m => new MovimentacaoResponse(m.Id, m.AtivoId, ativo.Ticker, m.Tipo, m.Data, m.Quantidade, m.PrecoUnitario, m.Taxas))
             .ToList();
 
-        // Um evento por data: fontes diferentes podem gravar o mesmo desdobramento
-        var eventos = (await db.EventosCorporativos.AsNoTracking()
+        var eventos = UmEventoPorData(await db.EventosCorporativos.AsNoTracking()
                 .Where(e => e.AtivoId == ativoId)
                 .ToListAsync())
-            .GroupBy(e => e.Data)
-            .Select(g => g.OrderBy(e => e.Origem).First())
             .OrderByDescending(e => e.Data)
             .Select(e => new EventoCorporativoResponse(e.Data, e.Tipo, e.Numerador, e.Denominador))
             .ToList();
@@ -200,10 +196,7 @@ public class AnaliseCarteiraService(
     {
         var motor = await MotorCarteira.CalcularAsync(db);
         var tickers = await TickersAsync();
-        return motor.ProventosRecebidos
-            .OrderByDescending(p => p.DataPagamento).ThenBy(p => tickers.GetValueOrDefault(p.AtivoId))
-            .Select(p => ParaResponse(p, tickers.GetValueOrDefault(p.AtivoId, "?")))
-            .ToList();
+        return ProventosRecebidos(motor, id => tickers.GetValueOrDefault(id));
     }
 
     public async Task<List<ProventosPeriodoResponse>> ObterProventosPorPeriodoAsync(
@@ -230,15 +223,9 @@ public class AnaliseCarteiraService(
         var ativos = await db.Ativos.AsNoTracking().ToDictionaryAsync(a => a.Id);
         var posicoes = MontarPosicoes(motor, await carteira.ObterPosicoesAsync());
 
-        var proventos = motor.ProventosRecebidos
-            .OrderByDescending(p => p.DataPagamento).ThenBy(p => ativos.GetValueOrDefault(p.AtivoId)?.Ticker)
-            .Select(p => ParaResponse(p, ativos.GetValueOrDefault(p.AtivoId)?.Ticker ?? "?"))
-            .ToList();
+        var proventos = ProventosRecebidos(motor, id => ativos.GetValueOrDefault(id)?.Ticker);
 
-        // Um evento por ativo e data: fontes diferentes podem gravar o mesmo desdobramento
-        var eventos = (await db.EventosCorporativos.AsNoTracking().ToListAsync())
-            .GroupBy(e => (e.AtivoId, e.Data))
-            .Select(g => g.OrderBy(e => e.Origem).First())
+        var eventos = UmEventoPorData(await db.EventosCorporativos.AsNoTracking().ToListAsync())
             .Where(e => ativos.ContainsKey(e.AtivoId))
             .OrderByDescending(e => e.Data).ThenBy(e => ativos[e.AtivoId].Ticker)
             .Select(e => new EventoCorporativoAtivoResponse(e.AtivoId, ativos[e.AtivoId].Ticker, e.Data, e.Tipo, e.Numerador, e.Denominador))
@@ -297,6 +284,21 @@ public class AnaliseCarteiraService(
     private static ProventoRecebidoResponse ParaResponse(MotorCarteira.ProventoRecebido p, string ticker) =>
         new(p.ProventoId, p.AtivoId, ticker, p.Tipo, p.Origem, p.DataCom, p.DataPagamento,
             p.DataPagamentoEstimada, p.Quantidade, p.ValorPorAcao, p.Valor, p.Corrigido);
+
+    /// <summary>Todos os proventos recebidos, do pagamento mais recente para o mais antigo (e por ticker no mesmo dia).</summary>
+    private static List<ProventoRecebidoResponse> ProventosRecebidos(MotorCarteira motor, Func<int, string?> ticker) =>
+        motor.ProventosRecebidos
+            .Select(p => ParaResponse(p, ticker(p.AtivoId) ?? "?"))
+            .OrderByDescending(p => p.DataPagamento).ThenBy(p => p.Ticker)
+            .ToList();
+
+    /// <summary>Um evento por ativo e data: fontes diferentes (Yahoo, cadastro manual) podem gravar o mesmo desdobramento.</summary>
+    private static IEnumerable<Domain.Entities.EventoCorporativo> UmEventoPorData(IEnumerable<Domain.Entities.EventoCorporativo> eventos) =>
+        eventos.GroupBy(e => (e.AtivoId, e.Data)).Select(g => g.OrderBy(e => e.Origem).First());
+
+    /// <summary>Último dia calculado pelo motor (a data das cotações mais recentes), ou hoje sem carteira.</summary>
+    private static DateOnly UltimoDia(MotorCarteira motor) =>
+        motor.Pontos.Count > 0 ? motor.Pontos[^1].Data : DateOnly.FromDateTime(DateTime.Today);
 
     // ── Cálculos sobre a série (sem banco) ───────────────────────────────
 
@@ -388,7 +390,7 @@ public class AnaliseCarteiraService(
 
     private static List<PosicaoDetalhadaResponse> MontarPosicoes(MotorCarteira motor, List<PosicaoAtivoResponse> posicoes)
     {
-        var fim = motor.Pontos.Count > 0 ? motor.Pontos[^1].Data : DateOnly.FromDateTime(DateTime.Today);
+        var fim = UltimoDia(motor);
         var inicio12Meses = fim.AddMonths(-12);
         var recebidos12Meses = motor.ProventosRecebidos
             .Where(p => p.DataPagamento > inicio12Meses && p.DataPagamento <= fim)

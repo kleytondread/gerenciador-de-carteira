@@ -47,7 +47,7 @@
                 {
                     <li>
                         <a href="posicoes/@p.AtivoId" class="wal-forte">@p.Ticker</a>
-                        <span class="wal-barra-trilho"><span style="width:@Largura(p.Peso);background:@CoresSeries.Cor(p.Tipo)"></span></span>
+                        <span class="wal-barra-trilho"><span style="width:@Formatacao.LarguraCss(p.Peso ?? 0, maiorPeso);background:@CoresSeries.Cor(p.Tipo)"></span></span>
                         <span class="wal-num">@Formatacao.PercentualSimples(p.Peso ?? 0)</span>
                     </li>
                 }
@@ -76,6 +76,8 @@
     private Rosca classes = Rosca.Vazia;
     private Rosca categorias = Rosca.Vazia;
     private List<PosicaoDetalhadaResponse> ativos = [];
+    // Barras proporcionais ao maior peso, para as diferenças aparecerem mesmo entre pesos pequenos
+    private decimal maiorPeso;
 
     protected override void OnParametersSet()
     {
@@ -85,6 +87,7 @@
         categorias = Rosca.De(CoresSeries.OrdemCategorias
             .Select(c => Agrupar(CoresSeries.NomeCategoria(c), CoresSeries.Cor(c), Posicoes.Where(p => p.Categoria == c))));
         ativos = Posicoes.OrderByDescending(p => p.Valor ?? 0).ToList();
+        maiorPeso = ativos.Count > 0 ? ativos.Max(p => p.Peso ?? 0) : 0;
     }
 
     private Grupo Agrupar(string nome, string cor, IEnumerable<PosicaoDetalhadaResponse> posicoes)
@@ -110,13 +113,5 @@
                 // A tabela abaixo é a legenda; tooltip mostraria R$ mesmo com os valores ocultos
                 new DonutChartOptions { ChartPalette = grupos.Select(g => g.Cor).ToArray(), ShowLegend = false, ShowToolTips = false });
         }
-    }
-
-    // Barra proporcional ao maior peso, para as diferenças aparecerem mesmo entre pesos pequenos
-    private string Largura(decimal? peso)
-    {
-        var maior = ativos.Count > 0 ? ativos.Max(p => p.Peso ?? 0) : 0;
-        var fracao = maior > 0 ? (peso ?? 0) / maior : 0;
-        return (fracao * 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
     }
 }

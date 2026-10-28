@@ -1,9 +1,6 @@
 @page "/transacoes"
 @page "/movimentacoes"
-@* DbContext próprio por página — ver comentário em Home.razor *@
-@inherits OwningComponentBase
-@inject PreferenciasExibicao Preferencias
-@inject NotificacoesCarteira Notificacoes
+@inherits PaginaCarteira
 @inject PainelTransacaoEstado PainelEstado
 @inject IDialogService Dialogos
 @inject ISnackbar Snackbar
@@ -12,7 +9,7 @@
 <PageTitle>Transações - Gestor de Carteira B3</PageTitle>
 <SectionContent SectionName="@TituloPagina.Secao">Transações</SectionContent>
 
-@if (carregando)
+@if (Carregando)
 {
     <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Carregando transações" />
 }
@@ -51,9 +48,9 @@ else
                     @foreach (var (m, i) in meses.Select((m, i) => (m, i)))
                     {
                         <div class="wal-fluxo-mes" title="@($"{m.Mes.ToString("MMM/yyyy", Formatacao.PtBR)} — compras {Formatacao.Moeda(m.Compras, Mascarar)} · vendas {Formatacao.Moeda(m.Vendas, Mascarar)}")">
-                            <div class="wal-fluxo-cima"><span style="height:@Altura(m.Compras, maior)"></span></div>
-                            <div class="wal-fluxo-baixo"><span style="height:@Altura(m.Vendas, maior)"></span></div>
-                            <span class="wal-fluxo-rotulo">@RotuloMes(m.Mes, i, meses.Count)</span>
+                            <div class="wal-fluxo-cima"><span style="height:@Formatacao.LarguraCss(m.Compras, maior)"></span></div>
+                            <div class="wal-fluxo-baixo"><span style="height:@Formatacao.LarguraCss(m.Vendas, maior)"></span></div>
+                            <span class="wal-fluxo-rotulo">@Formatacao.RotuloEixoMensal(m.Mes, i, meses.Count)</span>
                         </div>
                     }
                 </div>
@@ -163,7 +160,6 @@ else
     private const int MesesPorVez = 6;
     private static readonly string[] Periodos = ["12M", "24M", "Início"];
 
-    private bool carregando = true;
     private PainelTransacoesResponse? painel;
     private string periodo = "12M";
     private string? busca;
@@ -171,42 +167,17 @@ else
     private string? ativoFiltro;
     private int mesesVisiveis = MesesPorVez;
 
-    private bool Mascarar => Preferencias.Mascarar;
+    // O filtro por ativo vem da URL (?ativoId=); o ticker do chip sai das transações carregadas
+    protected override void OnParametersSet() => AtualizarNomeDoFiltro();
 
-    protected override async Task OnInitializedAsync()
-    {
-        Preferencias.Mudou += AoMudarPreferencias;
-        Notificacoes.CarteiraAlterada += AoAlterarCarteira;
-        try
-        {
-            await CarregarAsync();
-        }
-        finally
-        {
-            carregando = false;
-        }
-    }
-
-    protected override void OnParametersSet() =>
-        ativoFiltro = AtivoIdFiltro is int id ? painel?.Transacoes.FirstOrDefault(t => t.AtivoId == id)?.AtivoTicker : null;
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender) await Preferencias.CarregarAsync();
-    }
-
-    private async Task CarregarAsync()
+    protected override async Task CarregarAsync()
     {
         painel = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterPainelTransacoesAsync();
-        OnParametersSet();
+        AtualizarNomeDoFiltro();
     }
 
-    // Salvou no painel lateral (ou em outra tela): recarrega a lista e o gráfico
-    private void AoAlterarCarteira() => InvokeAsync(async () =>
-    {
-        await CarregarAsync();
-        StateHasChanged();
-    });
+    private void AtualizarNomeDoFiltro() =>
+        ativoFiltro = AtivoIdFiltro is int id ? painel?.Transacoes.FirstOrDefault(t => t.AtivoId == id)?.AtivoTicker : null;
 
     // ── Aportes e vendas ─────────────────────────────────────────────────
 
@@ -229,19 +200,12 @@ else
         ? 0
         : painel!.Transacoes.Count(t => new DateOnly(t.Data.Year, t.Data.Month, 1) >= meses[0].Mes);
 
-    private static string Altura(decimal valor, decimal maior) =>
-        (maior > 0 ? valor / maior * 100 : 0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
-
-    // Com muitos meses, um rótulo por ano (em janeiro) e no primeiro mês
-    private static string RotuloMes(DateOnly mes, int indice, int total) =>
-        total <= 13 || mes.Month == 1 || indice == 0 ? mes.ToString(total <= 13 ? "MMM" : "MMM/yy", Formatacao.PtBR) : "";
-
     // ── Histórico ────────────────────────────────────────────────────────
 
     private List<IGrouping<DateOnly, MovimentacaoResponse>> Grupos() => painel!.Transacoes
         .Where(t => AtivoIdFiltro is null || t.AtivoId == AtivoIdFiltro)
         .Where(t => tipo is null || t.Tipo == tipo)
-        .Where(t => string.IsNullOrWhiteSpace(busca) || t.AtivoTicker.Contains(busca.Trim(), StringComparison.OrdinalIgnoreCase))
+        .Where(t => Busca.Encontra(busca, t.AtivoTicker))
         .GroupBy(t => new DateOnly(t.Data.Year, t.Data.Month, 1))
         .ToList();
 
@@ -278,14 +242,5 @@ else
         }
         Snackbar.Add("Transação excluída.", Severity.Success);
         Notificacoes.NotificarAlteracao(); // a própria tela recarrega pelo aviso
-    }
-
-    private void AoMudarPreferencias() => InvokeAsync(StateHasChanged);
-
-    protected override async ValueTask DisposeAsyncCore()
-    {
-        Preferencias.Mudou -= AoMudarPreferencias;
-        Notificacoes.CarteiraAlterada -= AoAlterarCarteira;
-        await base.DisposeAsyncCore();
     }
 }

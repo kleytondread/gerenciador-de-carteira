@@ -9,12 +9,14 @@ public interface IMovimentacaoService
 
     Task<List<MovimentacaoResponse>> ListarAsync(int? ativoId = null);
 
+    Task<ResultadoOperacao<MovimentacaoResponse>> ObterAsync(int id);
+
     Task<ResultadoOperacao<MovimentacaoResponse>> EditarAsync(int id, EditarMovimentacaoRequest request);
 
     /// <summary>
     /// Remoção definitiva (spec não pede soft delete para Movimentacao, diferente de Ativo).
-    /// Limitação conhecida: excluir uma compra que deixaria uma venda posterior "no negativo" não é
-    /// validado retroativamente neste MVP (validação só roda na criação/edição da própria movimentação).
+    /// Bloqueada se deixar alguma venda posterior sem ações (ex.: excluir a compra que a cobria). Criar e
+    /// editar também conferem o saldo dia a dia, não só na data da própria movimentação.
     /// </summary>
     Task<ResultadoOperacao> ExcluirAsync(int id);
 }

@@ -15,7 +15,7 @@ public class MovimentacaoServiceTests : SqliteInMemoryTestBase
 
     public MovimentacaoServiceTests()
     {
-        sut = new MovimentacaoService(Db, new PosicaoService(Db), NullLogger<MovimentacaoService>.Instance);
+        sut = new MovimentacaoService(Db, NullLogger<MovimentacaoService>.Instance);
 
         var ativo = Fixtures.NovoAtivo();
         Db.Ativos.Add(ativo);
@@ -151,5 +151,71 @@ public class MovimentacaoServiceTests : SqliteInMemoryTestBase
 
         Assert.True(resultado.Sucesso);
         Assert.Empty(await Db.Movimentacoes.ToListAsync());
+    }
+
+    // Compra de 100 em 01/01 e venda de 80 em 10/02: a venda depende da compra
+    private async Task<int> CompraCobrindoVendaAsync()
+    {
+        var compra = await sut.CriarAsync(new CriarMovimentacaoRequest(ativoId, TipoMovimentacao.Compra, new DateOnly(2026, 1, 1), 100, 10));
+        await sut.CriarAsync(new CriarMovimentacaoRequest(ativoId, TipoMovimentacao.Venda, new DateOnly(2026, 2, 10), 80, 12));
+        return compra.Valor!.Id;
+    }
+
+    [Fact]
+    public async Task ExcluirAsync_CompraQueCobreVendaPosterior_RetornaValidacaoENaoExclui()
+    {
+        var compraId = await CompraCobrindoVendaAsync();
+
+        var resultado = await sut.ExcluirAsync(compraId);
+
+        Assert.Equal(TipoErroOperacao.Validacao, resultado.TipoErro);
+        Assert.Contains("10/02/2026", resultado.Erro);
+        Assert.Equal(2, await Db.Movimentacoes.CountAsync());
+    }
+
+    [Fact]
+    public async Task EditarAsync_ReduzirCompraAbaixoDaVendaPosterior_RetornaValidacao()
+    {
+        var compraId = await CompraCobrindoVendaAsync();
+
+        var resultado = await sut.EditarAsync(compraId,
+            new EditarMovimentacaoRequest(TipoMovimentacao.Compra, new DateOnly(2026, 1, 1), 50, 10, 0));
+
+        Assert.Equal(TipoErroOperacao.Validacao, resultado.TipoErro);
+    }
+
+    [Fact]
+    public async Task EditarAsync_MoverCompraParaDepoisDaVenda_RetornaValidacao()
+    {
+        var compraId = await CompraCobrindoVendaAsync();
+
+        var resultado = await sut.EditarAsync(compraId,
+            new EditarMovimentacaoRequest(TipoMovimentacao.Compra, new DateOnly(2026, 3, 1), 100, 10, 0));
+
+        Assert.Equal(TipoErroOperacao.Validacao, resultado.TipoErro);
+    }
+
+    [Fact]
+    public async Task CriarAsync_VendaAntigaQueDescobreVendaPosterior_RetornaValidacao()
+    {
+        await CompraCobrindoVendaAsync();
+
+        // Em 15/01 havia 100, mas vender 50 ali deixa a venda de 80 em 10/02 sem ações
+        var resultado = await sut.CriarAsync(
+            new CriarMovimentacaoRequest(ativoId, TipoMovimentacao.Venda, new DateOnly(2026, 1, 15), 50, 11));
+
+        Assert.Equal(TipoErroOperacao.Validacao, resultado.TipoErro);
+    }
+
+    [Fact]
+    public async Task CriarAsync_VendaNoMesmoDiaDaCompra_Permitida()
+    {
+        var data = new DateOnly(2026, 1, 5);
+        await sut.CriarAsync(new CriarMovimentacaoRequest(ativoId, TipoMovimentacao.Venda, data, 10, 11)); // falha: sem posição
+        await sut.CriarAsync(new CriarMovimentacaoRequest(ativoId, TipoMovimentacao.Compra, data, 10, 10));
+
+        var resultado = await sut.CriarAsync(new CriarMovimentacaoRequest(ativoId, TipoMovimentacao.Venda, data, 10, 11));
+
+        Assert.True(resultado.Sucesso);
     }
 }

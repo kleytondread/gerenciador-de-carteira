@@ -15,7 +15,7 @@ public class MovimentacaoServiceValidacaoTests : SqliteInMemoryTestBase
 
     public MovimentacaoServiceValidacaoTests()
     {
-        sut = new MovimentacaoService(Db, new PosicaoService(Db), NullLogger<MovimentacaoService>.Instance);
+        sut = new MovimentacaoService(Db, NullLogger<MovimentacaoService>.Instance);
 
         var ativo = Fixtures.NovoAtivo();
         Db.Ativos.Add(ativo);

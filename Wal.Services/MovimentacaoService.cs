@@ -10,7 +10,6 @@ namespace Wal.Services;
 
 public class MovimentacaoService(
     AppDbContext db,
-    IPosicaoService posicaoService,
     ILogger<MovimentacaoService> logger) : IMovimentacaoService
 {
     public async Task<ResultadoOperacao<MovimentacaoResponse>> CriarAsync(CriarMovimentacaoRequest request)
@@ -23,12 +22,10 @@ public class MovimentacaoService(
         if (ativo is null)
             return ResultadoOperacao<MovimentacaoResponse>.Falha("Ativo não encontrado.", TipoErroOperacao.NaoEncontrado);
 
-        if (request.Tipo == TipoMovimentacao.Venda)
-        {
-            var erroVenda = await ValidarVendaAsync(request.AtivoId, request.Data, request.Quantidade);
-            if (erroVenda is not null)
-                return ResultadoOperacao<MovimentacaoResponse>.Falha(erroVenda, TipoErroOperacao.Validacao);
-        }
+        var erroSaldo = await ValidarSaldoAsync(request.AtivoId, semMovimentacaoId: null,
+            nova: (request.Data, request.Tipo, request.Quantidade));
+        if (erroSaldo is not null)
+            return ResultadoOperacao<MovimentacaoResponse>.Falha(erroSaldo, TipoErroOperacao.Validacao);
 
         var movimentacao = new Movimentacao
         {
@@ -64,6 +61,14 @@ public class MovimentacaoService(
             .ToListAsync();
     }
 
+    public async Task<ResultadoOperacao<MovimentacaoResponse>> ObterAsync(int id)
+    {
+        var m = await db.Movimentacoes.AsNoTracking().Include(x => x.Ativo).FirstOrDefaultAsync(x => x.Id == id);
+        return m is null
+            ? ResultadoOperacao<MovimentacaoResponse>.Falha("Movimentação não encontrada.", TipoErroOperacao.NaoEncontrado)
+            : ResultadoOperacao<MovimentacaoResponse>.Ok(ParaResponse(m, m.Ativo.Ticker));
+    }
+
     public async Task<ResultadoOperacao<MovimentacaoResponse>> EditarAsync(int id, EditarMovimentacaoRequest request)
     {
         var movimentacao = await db.Movimentacoes.Include(m => m.Ativo).FirstOrDefaultAsync(m => m.Id == id);
@@ -74,12 +79,10 @@ public class MovimentacaoService(
         if (erroCampos is not null)
             return ResultadoOperacao<MovimentacaoResponse>.Falha(erroCampos, TipoErroOperacao.Validacao);
 
-        if (request.Tipo == TipoMovimentacao.Venda)
-        {
-            var erroVenda = await ValidarVendaAsync(movimentacao.AtivoId, request.Data, request.Quantidade, excluirMovimentacaoId: id);
-            if (erroVenda is not null)
-                return ResultadoOperacao<MovimentacaoResponse>.Falha(erroVenda, TipoErroOperacao.Validacao);
-        }
+        var erroSaldo = await ValidarSaldoAsync(movimentacao.AtivoId, semMovimentacaoId: id,
+            nova: (request.Data, request.Tipo, request.Quantidade));
+        if (erroSaldo is not null)
+            return ResultadoOperacao<MovimentacaoResponse>.Falha(erroSaldo, TipoErroOperacao.Validacao);
 
         movimentacao.Tipo = request.Tipo;
         movimentacao.Data = request.Data;
@@ -97,6 +100,11 @@ public class MovimentacaoService(
         if (movimentacao is null)
             return ResultadoOperacao.Falha("Movimentação não encontrada.", TipoErroOperacao.NaoEncontrado);
 
+        // Excluir uma compra pode deixar uma venda posterior sem ações
+        var erroSaldo = await ValidarSaldoAsync(movimentacao.AtivoId, semMovimentacaoId: id, nova: null);
+        if (erroSaldo is not null)
+            return ResultadoOperacao.Falha(erroSaldo, TipoErroOperacao.Validacao);
+
         db.Movimentacoes.Remove(movimentacao);
         await db.SaveChangesAsync();
 
@@ -106,13 +114,35 @@ public class MovimentacaoService(
         return ResultadoOperacao.Ok();
     }
 
-    private async Task<string?> ValidarVendaAsync(
-        int ativoId, DateOnly data, decimal quantidadeVenda, int? excluirMovimentacaoId = null)
+    /// <summary>
+    /// Confere a quantidade do ativo dia a dia como ficaria depois da alteração: nenhuma venda pode ficar sem ações.
+    /// Olhar só a data da venda lançada não basta: excluir ou reduzir uma compra, ou lançar uma venda antiga,
+    /// também pode descobrir uma venda posterior.
+    /// </summary>
+    /// <param name="semMovimentacaoId">Movimentação que sai (exclusão) ou é substituída (edição).</param>
+    /// <param name="nova">Movimentação que entra (criação) ou a versão editada.</param>
+    private async Task<string?> ValidarSaldoAsync(
+        int ativoId, int? semMovimentacaoId, (DateOnly Data, TipoMovimentacao Tipo, decimal Quantidade)? nova)
     {
-        var posicao = await posicaoService.CalcularPosicaoAsync(ativoId, data, excluirMovimentacaoId);
-        if (quantidadeVenda > posicao.Quantidade)
-            return $"Quantidade indisponível para venda: disponível {posicao.Quantidade}, solicitado {quantidadeVenda}.";
+        // Decimal no SQLite é texto: as somas são feitas em memória
+        var lista = (await db.Movimentacoes.AsNoTracking()
+                .Where(m => m.AtivoId == ativoId && (semMovimentacaoId == null || m.Id != semMovimentacaoId))
+                .Select(m => new { m.Data, m.Tipo, m.Quantidade })
+                .ToListAsync())
+            .Select(m => (m.Data, m.Tipo, m.Quantidade))
+            .ToList();
+        if (nova is { } n) lista.Add(n);
 
+        decimal saldo = 0;
+        foreach (var dia in lista.GroupBy(m => m.Data).OrderBy(g => g.Key))
+        {
+            // Compras do dia contam antes das vendas do mesmo dia (day trade)
+            var disponivel = saldo + dia.Where(m => m.Tipo == TipoMovimentacao.Compra).Sum(m => m.Quantidade);
+            var vendido = dia.Where(m => m.Tipo == TipoMovimentacao.Venda).Sum(m => m.Quantidade);
+            if (vendido > disponivel)
+                return $"Quantidade indisponível para venda em {dia.Key:dd/MM/yyyy}: disponível {disponivel}, vendido {vendido}.";
+            saldo = disponivel - vendido;
+        }
         return null;
     }
 

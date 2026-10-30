@@ -38,6 +38,10 @@
                                 {
                                     <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="() => OnEditarAtivo.InvokeAsync(ativoId)">Informar CNPJ</MudButton>
                                 }
+                                else if (p.Tipo == TipoPendenciaIrpf.CorretoraAusente && p.AtivoId is int tituloId)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="() => OnEditarAtivo.InvokeAsync(tituloId)">Escolher corretora</MudButton>
+                                }
                                 else if (p.Tipo == TipoPendenciaIrpf.Alerta && p.AtivoId is int alertaAtivoId)
                                 {
                                     <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="() => OnEditarAtivo.InvokeAsync(alertaAtivoId)">Editar ativo</MudButton>

@@ -29,6 +29,9 @@ namespace Wal.Data.Migrations
                     b.Property<string>("Cnpj")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("CorretoraId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime>("DataCadastro")
                         .HasColumnType("TEXT");
 
@@ -54,10 +57,37 @@ namespace Wal.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CorretoraId");
+
                     b.HasIndex("Ticker")
                         .IsUnique();
 
                     b.ToTable("Ativos");
+                });
+
+            modelBuilder.Entity("Wal.Domain.Entities.Corretora", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Cnpj")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Principal")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Cnpj")
+                        .IsUnique();
+
+                    b.ToTable("Corretoras");
                 });
 
             modelBuilder.Entity("Wal.Domain.Entities.CotacaoHistorica", b =>
@@ -297,6 +327,16 @@ namespace Wal.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Proventos");
+                });
+
+            modelBuilder.Entity("Wal.Domain.Entities.Ativo", b =>
+                {
+                    b.HasOne("Wal.Domain.Entities.Corretora", "Corretora")
+                        .WithMany()
+                        .HasForeignKey("CorretoraId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Corretora");
                 });
 
             modelBuilder.Entity("Wal.Domain.Entities.CotacaoHistorica", b =>

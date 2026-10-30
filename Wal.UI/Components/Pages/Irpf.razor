@@ -64,7 +64,9 @@ else
                 <Introducao>
                     <MudText Typo="Typo.body2">
                         Também vão nesta ficha, pelo informe de rendimentos de cada instituição: vendas e cupons do Tesouro Direto e de ETF de renda fixa
-                        (código 06, fonte pagadora @relatorio.Corretora.Nome, CNPJ @relatorio.Corretora.Cnpj), CDB/RDB e aplicações fora do app.
+                        (código 06, fonte pagadora: @(relatorio.Corretoras.Count == 0
+                            ? "a corretora — cadastre em Configurações"
+                            : string.Join("; ", relatorio.Corretoras.Select(c => $"{c.Nome}, CNPJ {c.Cnpj}")))), CDB/RDB e aplicações fora do app.
                     </MudText>
                 </Introducao>
             </AbaRendimentos>

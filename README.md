@@ -48,9 +48,11 @@ Use **uma** versão de cada vez (app Windows ou web). As duas usam a mesma pasta
 
 Backup: copie essa pasta com o app fechado.
 
-**Corretora do IR:** a corretora usada na tela de Imposto de Renda vem do `appsettings.json`, na pasta do programa
-(`Irpf:Corretora`, com nome e CNPJ). Se a sua não for a que está lá, edite esse arquivo. Atualizar o app
-sobrescreve o arquivo, então refaça a edição depois de cada atualização.
+## Primeiros passos
+
+Em **Configurações**, cadastre a corretora (nome e CNPJ). Ela é a fonte pagadora dos títulos do Tesouro Direto na
+tela de Imposto de Renda. Se você usa mais de uma, marque a **principal**: títulos novos vêm com ela, e você troca
+no cadastro do título quando ele estiver em outra.
 
 ## Desenvolvimento
 

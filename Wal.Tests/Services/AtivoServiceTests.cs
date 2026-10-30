@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Wal.Domain.Entities;
 using Wal.Domain.Enums;
 using Wal.Services;
 using Wal.Services.Common;
@@ -290,6 +291,39 @@ public class AtivoServiceTests : SqliteInMemoryTestBase
         Assert.Equal(new DateOnly(2045, 5, 15), ativo.VencimentoTesouro);
         Assert.Equal(CategoriaAlocacao.RendaFixa, ativo.Categoria);
         jobSchedulerMock.Verify(j => j.EnfileirarCargaHistoricaInicial(ativo.Id), Times.Once);
+    }
+
+    [Fact]
+    public async Task CriarAsync_Tesouro_SemCorretoraEscolhidaVemNaPrincipal()
+    {
+        CatalogoTesouro(Ipca2045);
+        Db.Corretoras.AddRange(
+            new Corretora { Nome = "Itaú", Cnpj = "61532644000115" },
+            new Corretora { Nome = "XP", Cnpj = "02332886000104", Principal = true });
+        await Db.SaveChangesAsync();
+
+        var resultado = await sut.CriarAsync(new CriarAtivoRequest("", "", TipoAtivo.Tesouro, "Tesouro IPCA+", new DateOnly(2045, 5, 15)));
+
+        Assert.True(resultado.Sucesso);
+        Assert.Equal(Db.Corretoras.Single(c => c.Principal).Id, resultado.Valor!.CorretoraId);
+    }
+
+    [Fact]
+    public async Task EditarAsync_Tesouro_TrocaACorretora()
+    {
+        var itau = new Corretora { Nome = "Itaú", Cnpj = "61532644000115" };
+        var xp = new Corretora { Nome = "XP", Cnpj = "02332886000104", Principal = true };
+        Db.Corretoras.AddRange(itau, xp);
+        var titulo = Fixtures.NovoAtivo("IPCA+ 2045", "Tesouro IPCA+ 2045", TipoAtivo.Tesouro);
+        Db.Ativos.Add(titulo);
+        await Db.SaveChangesAsync();
+        titulo.CorretoraId = xp.Id;
+        await Db.SaveChangesAsync();
+
+        var resultado = await sut.EditarAsync(titulo.Id, new EditarAtivoRequest(titulo.Nome, TipoAtivo.Tesouro, CorretoraId: itau.Id));
+
+        Assert.True(resultado.Sucesso);
+        Assert.Equal(itau.Id, resultado.Valor!.CorretoraId);
     }
 
     [Fact]

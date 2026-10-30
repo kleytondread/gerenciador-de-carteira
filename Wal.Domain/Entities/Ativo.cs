@@ -21,6 +21,9 @@ public class Ativo
 
     /// <summary>CNPJ do emissor (empresa ou fundo), só os 14 dígitos. Exigido na declaração do IR.</summary>
     public string? Cnpj { get; set; }
+    /// <summary>Só para Tipo = Tesouro: corretora onde o título fica (fonte pagadora no IR).</summary>
+    public int? CorretoraId { get; set; }
+    public Corretora? Corretora { get; set; }
 
     public ICollection<Movimentacao> Movimentacoes { get; set; } = [];
     public ICollection<CotacaoHistorica> CotacoesHistoricas { get; set; } = [];

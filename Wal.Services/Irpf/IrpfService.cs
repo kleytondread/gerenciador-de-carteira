@@ -20,7 +20,7 @@ public interface IIrpfService
     Task<ResultadoOperacao> ExcluirDarfAsync(int id);
 }
 
-public class IrpfService(AppDbContext db, CorretoraIrpf corretora, TimeProvider relogio) : IIrpfService
+public class IrpfService(AppDbContext db, TimeProvider relogio) : IIrpfService
 {
     private static readonly CultureInfo PtBR = CultureInfo.GetCultureInfo("pt-BR");
 
@@ -39,7 +39,11 @@ public class IrpfService(AppDbContext db, CorretoraIrpf corretora, TimeProvider 
         var fimAno = new DateOnly(ano, 12, 31);
         var fimAnterior = new DateOnly(ano - 1, 12, 31);
 
-        var ativos = await db.Ativos.AsNoTracking().ToDictionaryAsync(a => a.Id);
+        // Com a corretora: é a fonte pagadora dos títulos do Tesouro
+        var ativos = await db.Ativos.AsNoTracking().Include(a => a.Corretora).ToDictionaryAsync(a => a.Id);
+        var corretoras = (await db.Corretoras.AsNoTracking().ToListAsync())
+            .OrderByDescending(c => c.Principal).ThenBy(c => c.Nome, StringComparer.CurrentCultureIgnoreCase)
+            .Select(c => new CorretoraIrpf(c.Nome, Cnpj.Formatar(c.Cnpj))).ToList();
         var darfs = await db.DarfsPagos.AsNoTracking().OrderBy(d => d.Ano).ThenBy(d => d.Mes).ToListAsync();
         var motor = await MotorCarteira.CalcularAsync(db);
         var porAtivo = movimentacoes.ToLookup(m => m.AtivoId);
@@ -65,7 +69,7 @@ public class IrpfService(AppDbContext db, CorretoraIrpf corretora, TimeProvider 
         Pendencias(pendencias, ano, hoje, proventos, ativos, bens, isentos, exclusivos, meses, mesesFii, vendas);
 
         return new RelatorioIrpfResponse(
-            ano, anos, ano >= hoje.Year, TabelaIrpf.Conferido(ano), corretora with { Cnpj = Cnpj.Formatar(Cnpj.Normalizar(corretora.Cnpj)) },
+            ano, anos, ano >= hoje.Year, TabelaIrpf.Conferido(ano), corretoras,
             pendencias.OrderBy(p => p.Gravidade).ThenBy(p => p.Aba).ToList(),
             bens.OrderBy(b => b.Codigo.Grupo).ThenBy(b => b.Codigo.Codigo).ThenBy(b => b.Ticker).ToList(),
             isentos, exclusivos,
@@ -274,7 +278,7 @@ public class IrpfService(AppDbContext db, CorretoraIrpf corretora, TimeProvider 
 
             lista.Add(new BemDireitoIrpf(
                 codigo, TabelaIrpf.BemDireitoConferido(classe), ativo.Id, ativo.Ticker, ativo.Nome,
-                classe == ClasseFiscal.Tesouro ? FormatarCnpj(corretora.Cnpj) : FormatarCnpj(ativo.Cnpj),
+                classe == ClasseFiscal.Tesouro ? FormatarCnpj(ativo.Corretora?.Cnpj) : FormatarCnpj(ativo.Cnpj),
                 classe != ClasseFiscal.Tesouro,
                 Discriminacao(ativo, classe, atual, anterior.Quantidade, ano, bonificadas),
                 Zero(anterior.Quantidade) ? 0 : anterior.Quantidade, situacaoAnterior,
@@ -292,7 +296,10 @@ public class IrpfService(AppDbContext db, CorretoraIrpf corretora, TimeProvider 
             ClasseFiscal.Acao => ("ACAO", "ACOES", $"DA EMPRESA {nome}"),
             ClasseFiscal.Bdr => ("BDR", "BDRS", $"DE {nome}"),
             ClasseFiscal.Fii => ("COTA", "COTAS", $"DO FUNDO IMOBILIARIO {nome}"),
-            ClasseFiscal.Tesouro => ("TITULO", "TITULOS", $"{nome} (TESOURO DIRETO), CUSTODIADOS NA {Maiusculas(corretora.Nome)}"),
+            // Sem corretora a custódia fica de fora (e a Conferência aponta a pendência)
+            ClasseFiscal.Tesouro => ("TITULO", "TITULOS", ativo.Corretora is { } corretora
+                ? $"{nome} (TESOURO DIRETO), CUSTODIADOS NA {Maiusculas(corretora.Nome)}"
+                : $"{nome} (TESOURO DIRETO)"),
             _ => ("COTA", "COTAS", $"DO FUNDO DE INDICE {nome}")
         };
         string Unidade(decimal q) => q == 1 ? singular : plural;
@@ -377,6 +384,14 @@ public class IrpfService(AppDbContext db, CorretoraIrpf corretora, TimeProvider 
                     $"{ativo.Ticker}: CNPJ de filial", $"{Cnpj.Formatar(cnpj)} não é da matriz (/0001). Empresas e fundos são declarados pela matriz.", ativo.Id));
         }
 
+        // Título do Tesouro sem corretora: Bens e Direitos sai sem o CNPJ da fonte pagadora
+        foreach (var ativo in bens.Where(b => b.AtivoId is int && b.Codigo == TabelaIrpf.BemDireito(ClasseFiscal.Tesouro))
+                     .Select(b => ativos[b.AtivoId!.Value]).Where(a => a.Corretora is null).OrderBy(a => a.Ticker))
+            lista.Add(new PendenciaIrpf(TipoPendenciaIrpf.CorretoraAusente, GravidadePendencia.Bloqueia, AbaIrpf.BensDireitos,
+                $"{ativo.Ticker} sem corretora",
+                "O CNPJ da corretora é o da fonte pagadora do título. Cadastre a corretora em Configurações e escolha-a no cadastro do ativo.",
+                ativo.Id));
+
         // Ticker com final de BDR (32 a 35, 39) cadastrado como ação: código e isenção errados
         foreach (var ativo in bens.Where(b => b.AtivoId is int && b.Codigo == TabelaIrpf.BemDireito(ClasseFiscal.Acao)).Select(b => ativos[b.AtivoId!.Value])
                      .Where(a => a.Ticker.Length == 6 && a.Ticker[^2..] is "32" or "33" or "34" or "35" or "39"))
@@ -390,10 +405,10 @@ public class IrpfService(AppDbContext db, CorretoraIrpf corretora, TimeProvider 
                 $"DARF de {NomeMes(m.MesDoAno).ToLowerInvariant()}/{ano}{(m.Ficha == FichaRendaVariavel.FundosImobiliarios ? " (FII)" : "")}: {m.DarfPendente.ToString("C2", PtBR)} sem pagamento registrado",
                 $"Imposto a recolher {m.ARecolher.ToString("C2", PtBR)}, pago {m.ImpostoPago.ToString("C2", PtBR)}. Se ainda não pagou, o DARF (código 6015) sai com multa e juros pelo Sicalc; registre-o aqui depois de pagar."));
 
-        foreach (var g in vendas.Where(v => v.Data.Year == ano && v.Classe is ClasseFiscal.Tesouro or ClasseFiscal.EtfRendaFixa).GroupBy(v => v.Ticker))
+        foreach (var g in vendas.Where(v => v.Data.Year == ano && v.Classe is ClasseFiscal.Tesouro or ClasseFiscal.EtfRendaFixa).GroupBy(v => v.AtivoId))
             lista.Add(new PendenciaIrpf(TipoPendenciaIrpf.InformeDaCorretora, GravidadePendencia.Aviso, AbaIrpf.TributacaoExclusiva,
-                $"{g.Key}: venda no ano",
-                $"O IR é retido na fonte pela corretora. O rendimento vai em Tributação Exclusiva (código 06), com o valor do informe de rendimentos da {corretora.Nome}."));
+                $"{ativos[g.Key].Ticker}: venda no ano",
+                $"O IR é retido na fonte pela corretora. O rendimento vai em Tributação Exclusiva (código 06), com o valor do informe de rendimentos da {ativos[g.Key].Corretora?.Nome ?? "corretora"}."));
 
         foreach (var g in proventos.Where(p => Classe(ativos[p.AtivoId]) is ClasseFiscal.Bdr or ClasseFiscal.EtfRendaVariavel && p.Parcelas.Any(x => x.Data.Year == ano))
                      .GroupBy(p => p.AtivoId))

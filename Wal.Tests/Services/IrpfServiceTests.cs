@@ -13,7 +13,6 @@ public class IrpfServiceTests : SqliteInMemoryTestBase
         public override DateTimeOffset GetUtcNow() => agora;
     }
 
-    private static readonly CorretoraIrpf Corretora = new("XP INVESTIMENTOS CCTVM S/A", "02332886000104");
     private readonly IrpfService sut;
     private readonly Ativo itsa;
     private readonly Ativo semCnpj;
@@ -22,7 +21,7 @@ public class IrpfServiceTests : SqliteInMemoryTestBase
 
     public IrpfServiceTests()
     {
-        sut = new IrpfService(Db, Corretora, new RelogioFixo(new DateTimeOffset(2026, 10, 29, 15, 0, 0, TimeSpan.Zero)));
+        sut = new IrpfService(Db, new RelogioFixo(new DateTimeOffset(2026, 10, 29, 15, 0, 0, TimeSpan.Zero)));
 
         itsa = Fixtures.NovoAtivo("ITSA4", "Itaúsa PN");
         itsa.Cnpj = "61532644000115";
@@ -147,6 +146,37 @@ public class IrpfServiceTests : SqliteInMemoryTestBase
         Assert.Contains(r.Pendencias, p => p.Tipo == TipoPendenciaIrpf.ProventoNaoConferido && p.AtivoId == semCnpj.Id);
         Assert.Contains(r.Pendencias, p => p.Tipo == TipoPendenciaIrpf.CnpjAusente && p.AtivoId == semCnpj.Id);
         Assert.DoesNotContain(r.Pendencias, p => p.Tipo == TipoPendenciaIrpf.CnpjAusente && p.AtivoId == itsa.Id);
+    }
+
+    [Fact]
+    public async Task Tesouro_UsaACorretoraDoTituloESemCorretoraViraPendencia()
+    {
+        var itau = new Corretora { Nome = "Itaú Corretora", Cnpj = "61532644000115" };
+        Db.Corretoras.AddRange(new Corretora { Nome = "XP Investimentos", Cnpj = "02332886000104", Principal = true }, itau);
+        var naItau = Fixtures.NovoAtivo("IPCA+ 2045", "Tesouro IPCA+ 2045", TipoAtivo.Tesouro);
+        var semCorretora = Fixtures.NovoAtivo("SELIC 2029", "Tesouro Selic 2029", TipoAtivo.Tesouro);
+        Db.Ativos.AddRange(naItau, semCorretora);
+        Db.SaveChanges();
+        naItau.CorretoraId = itau.Id;
+        Db.Movimentacoes.AddRange(
+            Fixtures.NovaMovimentacao(naItau.Id, TipoMovimentacao.Compra, D(2025, 3, 10), 1, 1500),
+            Fixtures.NovaMovimentacao(semCorretora.Id, TipoMovimentacao.Compra, D(2025, 3, 10), 1, 15000));
+        Db.SaveChanges();
+
+        var r = await Relatorio(2025);
+
+        var bem = Assert.Single(r.BensDireitos, b => b.Ticker == "IPCA+ 2045");
+        Assert.Equal("61.532.644/0001-15", bem.Cnpj);
+        Assert.Contains("CUSTODIADOS NA ITAU CORRETORA", bem.Discriminacao);
+        var semFonte = Assert.Single(r.BensDireitos, b => b.Ticker == "SELIC 2029");
+        Assert.Null(semFonte.Cnpj);
+        Assert.DoesNotContain("CUSTODIADOS", semFonte.Discriminacao);
+        var pendencia = Assert.Single(r.Pendencias, p => p.Tipo == TipoPendenciaIrpf.CorretoraAusente);
+        Assert.Equal(semCorretora.Id, pendencia.AtivoId);
+        Assert.Equal(GravidadePendencia.Bloqueia, pendencia.Gravidade);
+        // Principal primeiro, para o texto da Tributação Exclusiva
+        Assert.Equal(["XP Investimentos", "Itaú Corretora"], r.Corretoras.Select(c => c.Nome));
+        Assert.Equal("02.332.886/0001-04", r.Corretoras[0].Cnpj);
     }
 
     [Fact]

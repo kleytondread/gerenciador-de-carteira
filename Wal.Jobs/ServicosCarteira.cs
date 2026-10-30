@@ -88,9 +88,8 @@ public static class ServicosCarteira
         services.AddScoped<IProventoService, ProventoService>();
         services.AddScoped<IImportacaoB3Service, ImportacaoB3Service>();
         services.AddScoped<IIrpfService, IrpfService>();
-        // Corretora onde ficam os ativos: vai na discriminação e é a fonte pagadora do Tesouro na declaração do IR
-        services.AddSingleton(configuration.GetSection("Irpf:Corretora").Get<CorretoraIrpf>()
-            ?? throw new InvalidOperationException("Configure Irpf:Corretora (Nome e Cnpj) no appsettings.json."));
+        // Corretoras ficam no banco (tela Configurações): fonte pagadora do Tesouro na declaração do IR
+        services.AddScoped<ICorretoraService, CorretoraService>();
 
         // Cotação do momento na tela de Posições: só em memória, compartilhada entre as abas abertas
         services.AddMemoryCache();

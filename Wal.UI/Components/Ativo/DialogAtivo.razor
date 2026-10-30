@@ -1,5 +1,6 @@
 @* Cadastrar um ativo para rastrear ou corrigir nome/tipo de um existente. O ticker não muda depois de criado. *@
 @inject IServiceScopeFactory ScopeFactory
+@inject NavigationManager Navegacao
 
 <MudDialog>
     <TitleContent>@(Editando is null ? "Adicionar ativo" : $"Editar {Editando.Ticker}")</TitleContent>
@@ -58,6 +59,28 @@
                                   Label="Ticker" Variant="Variant.Outlined" Required="true" MaxLength="6" Placeholder="PETR4" />
                     <MudTextField T="string" @bind-Value="nome" Label="Nome" Variant="Variant.Outlined" Required="true" Placeholder="Petrobras PN" />
                 </div>
+            }
+
+            @if (tipo == TipoAtivo.Tesouro && corretoras is not null)
+            {
+                @* Fonte pagadora do título no IR. Vem na corretora principal *@
+                @if (corretoras.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true">
+                        Nenhuma corretora cadastrada: o Imposto de Renda precisa dela para este título.
+                        <MudLink Typo="Typo.body2" OnClick="IrParaConfiguracoes">Cadastrar em Configurações</MudLink>
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudSelect T="int?" @bind-Value="corretoraId" Label="Corretora" Variant="Variant.Outlined"
+                               HelperText="Onde o título fica. Usada no Imposto de Renda.">
+                        @foreach (var c in corretoras)
+                        {
+                            <MudSelectItem T="int?" Value="c.Id">@c.Nome@(c.Principal ? " (principal)" : "")</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
             }
 
             @if (tipo != TipoAtivo.Tesouro)
@@ -122,16 +145,32 @@
     private string categoria = string.Empty;
     private TituloTesouroResponse? titulo;
 
+    // Corretoras para os títulos do Tesouro (a principal vem primeiro)
+    private List<CorretoraResponse>? corretoras;
+    private int? corretoraId;
+
     private static string RotuloTitulo(TituloTesouroResponse t) => $"{t.Nome} — venc. {t.Vencimento:dd/MM/yyyy}";
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        if (Editando is null) return;
-        tipo = Editando.Tipo;
-        nome = Editando.Nome;
-        cnpj = Cnpj.Normalizar(Editando.Cnpj) is string d ? Cnpj.Formatar(d) : null;
-        alocacao = Editando.Categoria;
-        alocacaoEscolhida = true;
+        if (Editando is not null)
+        {
+            tipo = Editando.Tipo;
+            nome = Editando.Nome;
+            cnpj = Cnpj.Normalizar(Editando.Cnpj) is string d ? Cnpj.Formatar(d) : null;
+            alocacao = Editando.Categoria;
+            alocacaoEscolhida = true;
+        }
+
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        corretoras = await scope.ServiceProvider.GetRequiredService<ICorretoraService>().ListarAsync();
+        corretoraId = Editando?.CorretoraId ?? corretoras.FirstOrDefault(c => c.Principal)?.Id;
+    }
+
+    private void IrParaConfiguracoes()
+    {
+        MudDialog.Cancel();
+        Navegacao.NavigateTo("configuracoes");
     }
 
     private void EscolherAlocacao(CategoriaAlocacao nova)
@@ -190,7 +229,7 @@
             var servico = scope.ServiceProvider.GetRequiredService<IAtivoService>();
             if (Editando is not null)
             {
-                var editado = await servico.EditarAsync(Editando.Id, new EditarAtivoRequest(nome, tipo, alocacao, cnpj ?? string.Empty));
+                var editado = await servico.EditarAsync(Editando.Id, new EditarAtivoRequest(nome, tipo, alocacao, cnpj ?? string.Empty, corretoraId));
                 if (editado.Sucesso) MudDialog.Close(DialogResult.Ok(editado.Valor!.Ticker));
                 else erro = editado.Erro;
                 return;
@@ -202,7 +241,7 @@
                 return;
             }
             var pedido = tipo == TipoAtivo.Tesouro
-                ? new CriarAtivoRequest(titulo!.Ticker, titulo.Nome, TipoAtivo.Tesouro, titulo.TipoTitulo, titulo.Vencimento)
+                ? new CriarAtivoRequest(titulo!.Ticker, titulo.Nome, TipoAtivo.Tesouro, titulo.TipoTitulo, titulo.Vencimento, CorretoraId: corretoraId)
                 : new CriarAtivoRequest(ticker, nome, tipo, Categoria: alocacao, Cnpj: cnpj);
             var criado = await servico.CriarAsync(pedido);
             if (criado.Sucesso) MudDialog.Close(DialogResult.Ok(criado.Valor!.Ticker));

@@ -82,6 +82,12 @@ public partial class AtivoService(
             return ResultadoOperacao<AtivoResponse>.Falha(
                 $"Já existe um ativo cadastrado para o {titulo.Nome}.", TipoErroOperacao.Conflito);
 
+        if (request.CorretoraId is int escolhida && !await db.Corretoras.AnyAsync(c => c.Id == escolhida))
+            return ResultadoOperacao<AtivoResponse>.Falha("Corretora não encontrada.", TipoErroOperacao.Validacao);
+        // Sem escolha, vai na principal (nula se ainda não há corretora: o IR aponta a pendência)
+        var corretoraId = request.CorretoraId
+            ?? await db.Corretoras.Where(c => c.Principal).Select(c => (int?)c.Id).FirstOrDefaultAsync();
+
         return await SalvarNovoAsync(new Ativo
         {
             Ticker = titulo.Ticker,
@@ -90,6 +96,7 @@ public partial class AtivoService(
             Categoria = CategoriaAlocacao.RendaFixa,
             TituloTesouro = titulo.TipoTitulo,
             VencimentoTesouro = titulo.Vencimento,
+            CorretoraId = corretoraId,
             EstaAtivo = true,
             DataCadastro = DateTime.UtcNow
         });
@@ -134,7 +141,7 @@ public partial class AtivoService(
 
         return await query
             .OrderBy(a => a.Ticker)
-            .Select(a => new AtivoResponse(a.Id, a.Ticker, a.Nome, a.Tipo, a.EstaAtivo, a.DataCadastro, a.Categoria, a.Cnpj))
+            .Select(a => new AtivoResponse(a.Id, a.Ticker, a.Nome, a.Tipo, a.EstaAtivo, a.DataCadastro, a.Categoria, a.Cnpj, a.CorretoraId))
             .ToListAsync();
     }
 
@@ -153,6 +160,13 @@ public partial class AtivoService(
             return ResultadoOperacao<AtivoResponse>.Falha(
                 "Não é possível trocar um título do Tesouro para outro tipo (nem o contrário). Desative e cadastre de novo.",
                 TipoErroOperacao.Validacao);
+
+        if (ativo.Tipo == TipoAtivo.Tesouro && request.CorretoraId is int corretoraId)
+        {
+            if (!await db.Corretoras.AnyAsync(c => c.Id == corretoraId))
+                return ResultadoOperacao<AtivoResponse>.Falha("Corretora não encontrada.", TipoErroOperacao.Validacao);
+            ativo.CorretoraId = corretoraId;
+        }
 
         // Ticker não é editável — o DTO de edição nem o expõe (decisão da Tarefa 2.3).
         ativo.Nome = request.Nome.Trim();
@@ -243,7 +257,7 @@ public partial class AtivoService(
                 : SaudeCotacoes.EmDia;
             return new AtivoRastreadoResponse(
                 a.Id, a.Ticker, a.Nome, a.Tipo, a.EstaAtivo, situacao, temTransacao ? Math.Max(quantidade, 0) : 0,
-                c?.Primeira, c?.Ultima, proventos.GetValueOrDefault(a.Id), saude, a.Categoria, a.Cnpj);
+                c?.Primeira, c?.Ultima, proventos.GetValueOrDefault(a.Id), saude, a.Categoria, a.Cnpj, a.CorretoraId);
         }).ToList();
     }
 
@@ -319,5 +333,5 @@ public partial class AtivoService(
         c => new CotacaoResponse(c.Data, c.Abertura, c.Maxima, c.Minima, c.Fechamento, c.Volume);
 
     private static AtivoResponse ParaResponse(Ativo ativo) =>
-        new(ativo.Id, ativo.Ticker, ativo.Nome, ativo.Tipo, ativo.EstaAtivo, ativo.DataCadastro, ativo.Categoria, ativo.Cnpj);
+        new(ativo.Id, ativo.Ticker, ativo.Nome, ativo.Tipo, ativo.EstaAtivo, ativo.DataCadastro, ativo.Categoria, ativo.Cnpj, ativo.CorretoraId);
 }

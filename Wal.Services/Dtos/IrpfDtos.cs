@@ -3,7 +3,7 @@ using Wal.Services.Irpf;
 
 namespace Wal.Services.Dtos;
 
-/// <summary>Corretora onde ficam os ativos (appsettings: Irpf:Corretora). É a fonte pagadora do Tesouro.</summary>
+/// <summary>Corretora cadastrada (tela Configurações), com o CNPJ formatado. É a fonte pagadora do Tesouro.</summary>
 public record CorretoraIrpf(string Nome, string Cnpj);
 
 public enum AbaIrpf { Conferencia, BensDireitos, RendimentosIsentos, TributacaoExclusiva, RendaVariavel }
@@ -18,6 +18,7 @@ public enum TipoPendenciaIrpf
     CnpjAusente,
     CnpjInvalido,
     CnpjFilial,
+    CorretoraAusente,
     DarfPendente,
     InformeDaCorretora,
     ForaDoEscopo,
@@ -105,7 +106,7 @@ public record RelatorioIrpfResponse(
     IReadOnlyList<int> AnosDisponiveis,
     bool AnoEmAndamento,
     bool CodigosConferidos,
-    CorretoraIrpf Corretora,
+    IReadOnlyList<CorretoraIrpf> Corretoras,
     IReadOnlyList<PendenciaIrpf> Pendencias,
     IReadOnlyList<BemDireitoIrpf> BensDireitos,
     IReadOnlyList<RendimentoIrpf> Isentos,

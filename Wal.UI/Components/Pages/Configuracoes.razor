@@ -1,0 +1,127 @@
+@page "/configuracoes"
+@inherits PaginaCarteira
+@inject IDialogService Dialogos
+@inject ISnackbar Snackbar
+
+<PageTitle>Configurações - Gestor de Carteira B3</PageTitle>
+<SectionContent SectionName="@TituloPagina.Secao">Configurações</SectionContent>
+
+@if (Carregando)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Carregando configurações" />
+}
+else
+{
+    <div class="wal-painel">
+        <CardPainel Titulo="Corretoras" Subtitulo="Fonte pagadora dos títulos do Tesouro no Imposto de Renda" SemEspacamento="true" Class="wal-s12">
+            <Acoes>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" DropShadow="false"
+                           StartIcon="@Icons.Material.Outlined.Add" OnClick="() => AbrirDialogoAsync(null)">Adicionar corretora</MudButton>
+            </Acoes>
+            <ChildContent>
+                <div class="wal-rolagem">
+                    <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="wal-tabela wal-tabela-acoes">
+                        <thead>
+                            <tr>
+                                <th title="Títulos novos do Tesouro vêm com a corretora principal">Principal</th>
+                                <th>Corretora</th>
+                                <th>CNPJ</th>
+                                <th class="wal-num">Títulos do Tesouro</th>
+                                <th class="wal-acoes-col"><span class="wal-oculto-leitor">Ações</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var c in corretoras)
+                            {
+                                @* @key: a principal sobe para o topo e a linha precisa ir junto (senão a caixa marcada fica na linha errada) *@
+                                <tr @key="c.Id">
+                                    <td>
+                                        @* Marcar outra troca a principal; desmarcar a principal não existe *@
+                                        <MudCheckBox T="bool" Value="c.Principal" ValueChanged="v => DefinirPrincipalAsync(c, v)" Color="Color.Primary"
+                                                     ReadOnly="@c.Principal" Disabled="@(alterando is not null)" aria-label="@($"{c.Nome} é a corretora principal")" />
+                                    </td>
+                                    <td class="wal-forte">@c.Nome</td>
+                                    <td>@c.Cnpj</td>
+                                    <td class="wal-num">@(c.Titulos > 0 ? c.Titulos : "–")</td>
+                                    <td class="wal-num wal-acoes-col">
+                                        <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" OnClick="() => AbrirDialogoAsync(c)"
+                                                       aria-label="@($"Editar {c.Nome}")" />
+                                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" OnClick="() => ExcluirAsync(c)"
+                                                       aria-label="@($"Excluir {c.Nome}")" />
+                                    </td>
+                                </tr>
+                            }
+                            @if (corretoras.Count == 0)
+                            {
+                                <tr><td colspan="5" class="wal-vazio">Nenhuma corretora cadastrada. A primeira que você adicionar será a principal.</td></tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </div>
+            </ChildContent>
+        </CardPainel>
+    </div>
+}
+
+@code {
+    private List<CorretoraResponse> corretoras = [];
+    private int? alterando;
+
+    private ICorretoraService Servico => ScopedServices.GetRequiredService<ICorretoraService>();
+
+    protected override async Task CarregarAsync() => corretoras = await Servico.ListarAsync();
+
+    private async Task AbrirDialogoAsync(CorretoraResponse? corretora)
+    {
+        var parametros = new DialogParameters<DialogCorretora>
+        {
+            { d => d.Editando, corretora },
+            { d => d.Primeira, corretoras.Count == 0 }
+        };
+        var dialogo = await Dialogos.ShowAsync<DialogCorretora>(null, parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        var resultado = await dialogo.Result;
+        if (resultado is not { Canceled: false, Data: string nome }) return;
+
+        Snackbar.Add(corretora is null ? $"{nome} cadastrada." : $"{nome} atualizada.", Severity.Success);
+        await RecarregarAsync();
+    }
+
+    private async Task DefinirPrincipalAsync(CorretoraResponse c, bool marcar)
+    {
+        if (!marcar || c.Principal) return;
+        alterando = c.Id;
+        try
+        {
+            var resultado = await Servico.DefinirPrincipalAsync(c.Id);
+            if (!resultado.Sucesso)
+            {
+                Snackbar.Add(resultado.Erro ?? "Não foi possível alterar.", Severity.Error);
+                return;
+            }
+            Snackbar.Add($"{c.Nome} é a corretora principal. Títulos novos do Tesouro vêm com ela.", Severity.Normal);
+            await RecarregarAsync();
+        }
+        finally
+        {
+            alterando = null;
+        }
+    }
+
+    private async Task ExcluirAsync(CorretoraResponse c)
+    {
+        var confirmado = await Dialogos.ShowMessageBoxAsync($"Excluir {c.Nome}?",
+            c.Principal && corretoras.Count > 1 ? "Ela é a principal: a primeira das outras, por nome, passa a ser." : "Ela sai da lista de corretoras.",
+            yesText: "Excluir", cancelText: "Cancelar");
+        if (confirmado != true) return;
+
+        var resultado = await Servico.ExcluirAsync(c.Id);
+        if (!resultado.Sucesso)
+        {
+            Snackbar.Add(resultado.Erro ?? "Não foi possível excluir.", Severity.Error);
+            return;
+        }
+        Snackbar.Add($"{c.Nome} excluída.", Severity.Normal);
+        await RecarregarAsync();
+    }
+}

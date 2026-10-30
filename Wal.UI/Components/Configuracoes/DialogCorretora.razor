@@ -1,0 +1,79 @@
+@* Cadastrar ou editar uma corretora (nome, CNPJ e se é a principal) *@
+@inject IServiceScopeFactory ScopeFactory
+
+<MudDialog>
+    <TitleContent>@(Editando is null ? "Adicionar corretora" : $"Editar {Editando.Nome}")</TitleContent>
+    <DialogContent>
+        <div class="wal-formulario">
+            <MudTextField T="string" @bind-Value="nome" Label="Nome" Variant="Variant.Outlined" Required="true"
+                          Placeholder="XP INVESTIMENTOS CCTVM S/A" HelperText="Como aparece no informe de rendimentos" />
+            <MudTextField T="string" @bind-Value="cnpj" Label="CNPJ" Variant="Variant.Outlined" Required="true"
+                          Mask="@(new PatternMask("00.000.000/0000-00"))" Placeholder="00.000.000/0001-00"
+                          HelperText="Fonte pagadora dos títulos do Tesouro no Imposto de Renda" />
+            @if (Editando?.Principal == true)
+            {
+                <MudText Typo="Typo.body2" Class="wal-k">Esta é a corretora principal. Para trocar, marque outra na lista.</MudText>
+            }
+            else
+            {
+                <MudCheckBox T="bool" @bind-Value="principal" Color="Color.Primary" Disabled="@primeira"
+                             Label="@(primeira ? "Corretora principal (a primeira cadastrada é sempre a principal)" : "Corretora principal: títulos novos vêm com ela")" />
+            }
+            @if (erro is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@erro</MudAlert>
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" DropShadow="false" Disabled="salvando" OnClick="SalvarAsync">
+            @(Editando is null ? "Adicionar" : "Salvar")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] public IMudDialogInstance MudDialog { get; set; } = default!;
+
+    /// <summary>Nulo para cadastrar uma nova.</summary>
+    [Parameter] public CorretoraResponse? Editando { get; set; }
+
+    /// <summary>Nenhuma cadastrada ainda: esta será a principal de qualquer jeito.</summary>
+    [Parameter] public bool Primeira { get; set; }
+
+    private string nome = string.Empty;
+    private string? cnpj;
+    private bool principal;
+    private bool primeira;
+    private string? erro;
+    private bool salvando;
+
+    protected override void OnInitialized()
+    {
+        primeira = Primeira && Editando is null;
+        principal = primeira;
+        if (Editando is null) return;
+        nome = Editando.Nome;
+        cnpj = Editando.Cnpj;
+    }
+
+    private async Task SalvarAsync()
+    {
+        erro = null;
+        salvando = true;
+        try
+        {
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            var servico = scope.ServiceProvider.GetRequiredService<ICorretoraService>();
+            var pedido = new SalvarCorretoraRequest(nome, cnpj ?? string.Empty, principal);
+            var resultado = Editando is null ? await servico.CriarAsync(pedido) : await servico.EditarAsync(Editando.Id, pedido);
+            if (resultado.Sucesso) MudDialog.Close(DialogResult.Ok(resultado.Valor!.Nome));
+            else erro = resultado.Erro;
+        }
+        finally
+        {
+            salvando = false;
+        }
+    }
+}

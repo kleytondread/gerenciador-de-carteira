@@ -13,12 +13,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<CotacaoIndice> CotacoesIndices => Set<CotacaoIndice>();
     public DbSet<PagamentoProvento> PagamentosProventos => Set<PagamentoProvento>();
     public DbSet<DarfPago> DarfsPagos => Set<DarfPago>();
+    public DbSet<Corretora> Corretoras => Set<Corretora>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Ativo>(e =>
         {
             e.HasIndex(a => a.Ticker).IsUnique();
+            // Corretora em uso não pode ser apagada (o serviço avisa antes)
+            e.HasOne(a => a.Corretora).WithMany().HasForeignKey(a => a.CorretoraId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Corretora>(e =>
+        {
+            e.HasIndex(c => c.Cnpj).IsUnique();
         });
 
         modelBuilder.Entity<Movimentacao>(e =>

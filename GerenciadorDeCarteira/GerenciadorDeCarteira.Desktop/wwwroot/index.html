@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gerenciador de Carteira</title>
+    <base href="/" />
+    <!-- Mesmo <head> do App.razor da versão web. Síncrono de propósito: aplica o tema salvo antes do primeiro paint -->
+    <script src="_content/Wal.UI/js/theme.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" />
+    <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
+    <link rel="stylesheet" href="_content/Wal.UI/app.css" />
+</head>
+
+<body>
+    <div id="app"></div>
+
+    <script src="_content/Wal.UI/js/chart.umd.min.js"></script>
+    <script src="_content/Wal.UI/js/charts.js"></script>
+    <script src="_content/Wal.UI/js/preferencias.js"></script>
+    <script src="_content/Wal.UI/js/irpf.js"></script>
+    <!-- Sem autostart="false": o Blazor precisa iniciar sozinho (lição do jrstudio) -->
+    <script src="_framework/blazor.webview.js"></script>
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+</body>
+
+</html>

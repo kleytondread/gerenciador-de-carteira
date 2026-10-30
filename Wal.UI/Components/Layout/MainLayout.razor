@@ -4,7 +4,7 @@
 @inject NotificacoesCarteira Notificacoes
 @inject IServiceScopeFactory ScopeFactory
 @inject PainelTransacaoEstado PainelEstado
-@inject IHttpContextAccessor HttpContextAccessor
+@inject IPreferenciasIniciais FontePreferencias
 
 <MudThemeProvider Theme="TemaWal.Tema" IsDarkMode="Preferencias.TemaEscuro" />
 <MudPopoverProvider />
@@ -108,13 +108,13 @@
     private bool menuAberto = true;
     private CabecalhoCarteiraResponse? cabecalho;
 
-    /// <summary>Lido dos cookies na pré-renderização e restaurado no circuito interativo.</summary>
+    /// <summary>Na web, lido dos cookies na pré-renderização e restaurado no circuito interativo.</summary>
     [PersistentState]
     public PreferenciasIniciais? Iniciais { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
-        Iniciais ??= PreferenciasIniciais.DosCookies(HttpContextAccessor.HttpContext?.Request.Cookies);
+        Iniciais ??= FontePreferencias.Ler();
         if (Iniciais is not null) Preferencias.DefinirIniciais(Iniciais);
         Preferencias.Mudou += AoMudar;
         Notificacoes.CarteiraAlterada += AoAlterarCarteira;

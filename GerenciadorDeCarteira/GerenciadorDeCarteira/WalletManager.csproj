@@ -16,12 +16,10 @@
 
   <ItemGroup>
     <PackageReference Include="Hangfire.AspNetCore" Version="1.8.23" />
-    <PackageReference Include="Hangfire.Storage.SQLite" Version="0.4.3" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="MudBlazor" Version="9.11.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
   </ItemGroup>
@@ -30,6 +28,13 @@
     <ProjectReference Include="..\..\Wal.Services\Wal.Services.csproj" />
     <ProjectReference Include="..\..\Wal.Data\Wal.Data.csproj" />
     <ProjectReference Include="..\..\Wal.Jobs\Wal.Jobs.csproj" />
+    <!-- As telas (componentes, CSS e JS) -->
+    <ProjectReference Include="..\..\Wal.UI\Wal.UI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Só para desenvolvimento (aponta o banco para a pasta do projeto): não vai para o pacote publicado -->
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
 </Project>

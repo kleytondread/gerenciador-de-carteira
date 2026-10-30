@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!-- App Windows: janela WPF com as mesmas telas da versão web (Wal.UI) dentro de um WebView2 -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- TFM com a versão do SDK do Windows: o WebView2 do WPF no .NET 10 precisa dela (WebView2Feedback#5436) -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>GerenciadorDeCarteira.Desktop</RootNamespace>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <AssemblyTitle>Gerenciador de Carteira</AssemblyTitle>
+    <Product>Gerenciador de Carteira</Product>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <!-- Só os textos em português dos diálogos nativos; sem isso o pacote leva ~13 idiomas à toa -->
+    <SatelliteResourceLanguages>pt-BR</SatelliteResourceLanguages>
+    <!-- App de um usuário só: o GC de servidor reservaria memória por núcleo do processador sem necessidade -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Wpf" Version="10.0.120" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="10.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Wal.UI\Wal.UI.csproj" />
+    <ProjectReference Include="..\..\Wal.Jobs\Wal.Jobs.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Mesmas configurações da versão web (banco, Tesouro, corretora do IR), sem cópia duplicada -->
+    <Content Include="..\GerenciadorDeCarteira\appsettings.json" Link="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Só para desenvolvimento: não vão para o pacote publicado -->
+    <Content Update="appsettings.Development.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
+    <Content Update="Properties\launchSettings.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+    <!-- Ícone da janela (pack URI) e do .exe (ApplicationIcon) -->
+    <Resource Include="app.ico" />
+  </ItemGroup>
+
+</Project>

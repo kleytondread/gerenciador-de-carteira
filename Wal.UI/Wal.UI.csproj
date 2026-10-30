@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!-- Telas do app (componentes, CSS e JS), usadas pela versão web e pela versão Windows -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Mesmo namespace de quando as telas ficavam no projeto web: GerenciadorDeCarteira.Components.* -->
+    <RootNamespace>GerenciadorDeCarteira</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" Version="9.11.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Wal.Services\Wal.Services.csproj" />
+    <ProjectReference Include="..\Wal.Data\Wal.Data.csproj" />
+  </ItemGroup>
+
+</Project>

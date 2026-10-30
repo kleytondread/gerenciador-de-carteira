@@ -248,7 +248,7 @@ public class ImportacaoB3Service(AppDbContext db, ILogger<ImportacaoB3Service> l
         string.Join(";", itens.Select(i => $"{i.Acao}:{i.ProventoId}:{string.Join(",", i.Creditos.Select(c => c.Linha + "@" + c.Data.DayNumber))}").Order());
 
     /// <summary>Cópia consistente do banco (VACUUM INTO) ao lado dele, antes de mexer nos proventos.</summary>
-    private async Task<string?> FazerBackupAsync()
+    internal async Task<string?> FazerBackupAsync()
     {
         var arquivo = db.Database.GetDbConnection().DataSource;
         if (string.IsNullOrEmpty(arquivo) || arquivo.Contains(":memory:", StringComparison.OrdinalIgnoreCase)) return null;
@@ -256,7 +256,8 @@ public class ImportacaoB3Service(AppDbContext db, ILogger<ImportacaoB3Service> l
         var pasta = Path.GetDirectoryName(Path.GetFullPath(arquivo))!;
         var nome = Path.GetFileNameWithoutExtension(arquivo);
         var destino = Path.Combine(pasta, $"{nome}.backup-antes-importacao-b3-{DateTime.Now:yyyyMMdd-HHmmss}.db");
-        await db.Database.ExecuteSqlRawAsync($"VACUUM INTO '{destino.Replace("'", "''")}'");
+        // Caminho como parâmetro (o SQLite aceita em VACUUM INTO), não montado dentro do SQL
+        await db.Database.ExecuteSqlAsync($"VACUUM INTO {destino}");
         return destino;
     }
 

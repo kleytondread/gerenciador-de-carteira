@@ -11,6 +11,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Provento> Proventos => Set<Provento>();
     public DbSet<EventoCorporativo> EventosCorporativos => Set<EventoCorporativo>();
     public DbSet<CotacaoIndice> CotacoesIndices => Set<CotacaoIndice>();
+    public DbSet<PagamentoProvento> PagamentosProventos => Set<PagamentoProvento>();
+    public DbSet<DarfPago> DarfsPagos => Set<DarfPago>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -37,11 +39,27 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<Provento>(e =>
         {
-            // O tipo entra na chave: a empresa pode pagar dividendo e JCP no mesmo dia (ex.: CPLE6 em 28/06/2024)
-            e.HasIndex(p => new { p.AtivoId, p.DataPagamento, p.TipoProvento, p.Origem }).IsUnique();
+            // O tipo entra na chave: a empresa pode pagar dividendo e JCP no mesmo dia (ex.: CPLE6 em 28/06/2024).
+            // A data com também: no mesmo dia podem ser pagos JCPs de créditos diferentes (ex.: ITSA4 em 07/03/2025)
+            e.HasIndex(p => new { p.AtivoId, p.DataPagamento, p.TipoProvento, p.Origem, p.DataCom }).IsUnique();
             e.Property(p => p.ValorPorAcao).HasPrecision(18, 4);
             e.Ignore(p => p.TipoEfetivo);
             e.Ignore(p => p.DataPagamentoEfetiva);
+        });
+
+        modelBuilder.Entity<PagamentoProvento>(e =>
+        {
+            e.HasOne(p => p.Provento).WithMany(p => p.Pagamentos).HasForeignKey(p => p.ProventoId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(p => new { p.ProventoId, p.Data });
+            e.Property(p => p.Quantidade).HasPrecision(18, 4);
+            e.Property(p => p.ValorBruto).HasPrecision(18, 4);
+            e.Property(p => p.ValorLiquido).HasPrecision(18, 4);
+        });
+
+        modelBuilder.Entity<DarfPago>(e =>
+        {
+            e.HasIndex(d => new { d.Ano, d.Mes });
+            e.Property(d => d.ValorPrincipal).HasPrecision(18, 2);
         });
 
         modelBuilder.Entity<EventoCorporativo>(e =>

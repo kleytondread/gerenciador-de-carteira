@@ -1,0 +1,82 @@
+@* O que resolver antes de copiar qualquer valor para o programa da Receita *@
+
+<div class="wal-painel">
+    <CardPainel Titulo="Como usar" Subtitulo="@($"declaração {Relatorio.Ano + 1}, ano-calendário {Relatorio.Ano}")" Class="wal-s12">
+        <ol class="wal-irpf-passos">
+            <li><strong>Resolva o que bloqueia</strong> (abaixo, em vermelho): proventos ainda sem conferência pela B3, CNPJs, DARFs.</li>
+            <li><strong>Preencha o programa na ordem das abas.</strong> Cada campo tem o botão <MudIcon Icon="@Icons.Material.Outlined.ContentCopy" Size="Size.Small" Class="wal-icone-texto" /> para copiar.</li>
+            <li>Valores com <MudIcon Icon="@Icons.Material.Outlined.Calculate" Size="Size.Small" Class="wal-icone-texto" /> foram calculados pelo app, não vieram da B3: confira com o informe de rendimentos.</li>
+        </ol>
+    </CardPainel>
+
+    @foreach (var grupo in Relatorio.Pendencias.GroupBy(p => p.Gravidade).OrderBy(g => g.Key))
+    {
+        <CardPainel Titulo="@Titulo(grupo.Key)" Subtitulo="@grupo.Count().ToString()" SemEspacamento="true" Class="wal-s12">
+            <Acoes>
+                @if (grupo.Key == GravidadePendencia.Bloqueia && grupo.Any(p => p.Tipo == TipoPendenciaIrpf.ProventoNaoConferido))
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" DropShadow="false"
+                               StartIcon="@Icons.Material.Outlined.UploadFile" OnClick="OnImportar">Importar extrato B3</MudButton>
+                }
+            </Acoes>
+            <ChildContent>
+                <ul class="wal-pendencias">
+                    @foreach (var p in grupo)
+                    {
+                        <li class="@($"wal-pendencia wal-pendencia-{grupo.Key.ToString().ToLowerInvariant()}")">
+                            <MudIcon Icon="@Icone(grupo.Key)" Size="Size.Small" Class="wal-pendencia-icone" />
+                            <div class="wal-pendencia-texto">
+                                <span class="wal-forte">@p.Titulo</span>
+                                <span class="wal-k">@p.Detalhe</span>
+                            </div>
+                            <span class="wal-pendencia-acao">
+                                @if (p.Tipo is TipoPendenciaIrpf.ProventoNaoConferido or TipoPendenciaIrpf.ProventoSemDataCom && p.ProventoId is int proventoId)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="() => OnCorrigirProvento.InvokeAsync(proventoId)">Corrigir</MudButton>
+                                }
+                                else if (p.Tipo is TipoPendenciaIrpf.CnpjAusente or TipoPendenciaIrpf.CnpjInvalido or TipoPendenciaIrpf.CnpjFilial && p.AtivoId is int ativoId)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="() => OnEditarAtivo.InvokeAsync(ativoId)">Informar CNPJ</MudButton>
+                                }
+                                else if (p.Tipo == TipoPendenciaIrpf.Alerta && p.AtivoId is int alertaAtivoId)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="() => OnEditarAtivo.InvokeAsync(alertaAtivoId)">Editar ativo</MudButton>
+                                }
+                                else if (p.Tipo == TipoPendenciaIrpf.DarfPendente)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="() => OnIrPara.InvokeAsync(p.Aba)">Ver mês</MudButton>
+                                }
+                            </span>
+                        </li>
+                    }
+                </ul>
+            </ChildContent>
+        </CardPainel>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RelatorioIrpfResponse Relatorio { get; set; } = default!;
+
+    [Parameter] public EventCallback<int> OnCorrigirProvento { get; set; }
+
+    [Parameter] public EventCallback<int> OnEditarAtivo { get; set; }
+
+    [Parameter] public EventCallback OnImportar { get; set; }
+
+    [Parameter] public EventCallback<AbaIrpf> OnIrPara { get; set; }
+
+    private static string Titulo(GravidadePendencia g) => g switch
+    {
+        GravidadePendencia.Bloqueia => "Resolver antes de declarar",
+        GravidadePendencia.Aviso => "Conferir",
+        _ => "Lembretes"
+    };
+
+    private static string Icone(GravidadePendencia g) => g switch
+    {
+        GravidadePendencia.Bloqueia => Icons.Material.Outlined.ErrorOutline,
+        GravidadePendencia.Aviso => Icons.Material.Outlined.WarningAmber,
+        _ => Icons.Material.Outlined.Info
+    };
+}

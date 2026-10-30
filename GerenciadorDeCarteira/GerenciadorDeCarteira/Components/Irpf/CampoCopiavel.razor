@@ -1,0 +1,40 @@
+@* Valor de um campo do programa do IR com botão de copiar. Valores em R$ são copiados sem separador de milhar ("21468,69"), como o programa aceita *@
+@inject IJSRuntime Js
+@inject ISnackbar Snackbar
+
+<span class="wal-copiavel @Class">
+    <span class="wal-copiavel-texto">@(Mascarar && Moeda is not null ? Formatacao.ValorOculto : Exibicao)</span>
+    <MudIconButton Icon="@Icons.Material.Outlined.ContentCopy" Size="Size.Small" Class="wal-copiar"
+                   aria-label="@($"Copiar {Rotulo}")" title="@($"Copiar {Rotulo}")" OnClick="CopiarAsync" />
+</span>
+
+@code {
+    /// <summary>Texto copiado (e exibido, se não houver <see cref="Moeda"/>).</summary>
+    [Parameter] public string? Texto { get; set; }
+
+    /// <summary>Valor em R$: exibido formatado e copiado como o programa aceita.</summary>
+    [Parameter] public decimal? Moeda { get; set; }
+
+    [Parameter, EditorRequired] public string Rotulo { get; set; } = "";
+
+    [Parameter] public bool Mascarar { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private string Exibicao => Moeda is decimal v ? Formatacao.Moeda(v) : Texto ?? "";
+
+    private string ParaCopiar => Moeda is decimal v ? v.ToString("0.00", Formatacao.PtBR) : Texto ?? "";
+
+    private async Task CopiarAsync()
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("walIrpf.copiar", ParaCopiar);
+            Snackbar.Add($"{Rotulo} copiado: {(Mascarar && Moeda is not null ? "valor" : ParaCopiar)}", Severity.Normal);
+        }
+        catch (JSException)
+        {
+            Snackbar.Add("O navegador não deixou copiar. Selecione o texto e copie com Ctrl+C.", Severity.Warning);
+        }
+    }
+}

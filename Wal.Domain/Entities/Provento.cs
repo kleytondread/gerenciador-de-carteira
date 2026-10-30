@@ -29,5 +29,8 @@ public class Provento
 
     public DateOnly DataPagamentoEfetiva => DataPagamentoCorrigida ?? DataPagamento;
 
+    /// <summary>Parcelas pagas, vindas do extrato da B3 (só em proventos com Origem = ExtratoB3).</summary>
+    public ICollection<PagamentoProvento> Pagamentos { get; set; } = [];
+
     public Ativo Ativo { get; set; } = null!;
 }

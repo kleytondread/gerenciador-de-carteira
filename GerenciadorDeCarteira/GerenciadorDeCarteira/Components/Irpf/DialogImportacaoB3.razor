@@ -1,0 +1,259 @@
+@* Importação do extrato de Movimentação da B3: lê os arquivos, mostra a prévia do que muda nos proventos e só grava depois da confirmação *@
+@inject IServiceScopeFactory ScopeFactory
+
+<MudDialog>
+    <TitleContent>Importar extrato de Movimentação da B3</TitleContent>
+    <DialogContent>
+        <div class="wal-formulario wal-importacao">
+            @if (previa is null)
+            {
+                <MudText Typo="Typo.body2">
+                    Na Área do Investidor da B3: <strong>Extratos → Movimentação</strong>, escolha o período e baixe em Excel.
+                    Pode enviar mais de um arquivo (períodos repetidos não duplicam nada).
+                </MudText>
+                <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="LerArquivosAsync" Accept=".xlsx" MaximumFileCount="10">
+                    <CustomContent>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" DropShadow="false" Disabled="lendo"
+                                   StartIcon="@Icons.Material.Outlined.UploadFile" OnClick="@context.OpenFilePickerAsync">Escolher arquivos .xlsx</MudButton>
+                    </CustomContent>
+                </MudFileUpload>
+                @if (lendo)
+                {
+                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Lendo o extrato" />
+                }
+            }
+            else
+            {
+                <div class="wal-importacao-resumo">
+                    <span>Extrato de <strong>@previa.Inicio.ToString("dd/MM/yyyy")</strong> a <strong>@previa.Fim.ToString("dd/MM/yyyy")</strong></span>
+                    <span class="wal-k">@string.Join(", ", previa.Arquivos)</span>
+                </div>
+                <div class="wal-importacao-chips">
+                    @foreach (var g in Grupos.Where(g => g.Itens.Count > 0))
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@g.Cor" Icon="@g.Icone">@g.Titulo: @g.Itens.Count</MudChip>
+                    }
+                </div>
+                @if (previa.TickersNaoCadastrados.Count > 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true">
+                        Proventos de ativos não cadastrados (ignorados): @string.Join(", ", previa.TickersNaoCadastrados).
+                    </MudAlert>
+                }
+
+                <MudExpansionPanels MultiExpansion="true" Elevation="0" Outlined="true" Dense="true">
+                    @foreach (var g in Grupos.Where(g => g.Itens.Count > 0))
+                    {
+                        <MudExpansionPanel Expanded="@g.Aberto">
+                            <TitleContent>
+                                <div class="wal-importacao-grupo">
+                                    <MudIcon Icon="@g.Icone" Color="@g.Cor" Size="Size.Small" />
+                                    <span class="wal-forte">@g.Titulo (@g.Itens.Count)</span>
+                                    <span class="wal-k">@g.Explicacao</span>
+                                </div>
+                            </TitleContent>
+                            <ChildContent>
+                                <div class="wal-rolagem">
+                                    <MudSimpleTable Dense="true" Elevation="0" Class="wal-tabela wal-tabela-compacta">
+                                        <thead>
+                                            <tr>
+                                                <th>Ativo</th>
+                                                <th>No app</th>
+                                                <th>Na B3</th>
+                                                <th class="wal-num">Esperado</th>
+                                                <th class="wal-num">Recebido</th>
+                                                <th>Detalhe</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var i in g.Itens)
+                                            {
+                                                <tr>
+                                                    <td class="wal-forte">@i.Ticker</td>
+                                                    <td>
+                                                        @if (i.DataEx is DateOnly ex)
+                                                        {
+                                                            <span>ex @ex.ToString("dd/MM/yy")</span>
+                                                            <br /><span class="wal-k">com @i.DataCom?.ToString("dd/MM/yy")</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="wal-k">—</span>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        @foreach (var c in i.Creditos)
+                                                        {
+                                                            <div class="wal-importacao-credito">
+                                                                @c.Data.ToString("dd/MM/yy") @Formatacao.NomeProvento(c.Tipo) @Formatacao.Moeda(c.ValorLiquido)
+                                                                @if (c.Tipo == TipoProvento.JCP)
+                                                                {
+                                                                    <span class="wal-k">(IR @c.Aliquota.ToString("P1", Formatacao.PtBR))</span>
+                                                                }
+                                                            </div>
+                                                        }
+                                                    </td>
+                                                    <td class="wal-num">@(i.ValorEsperado is decimal e ? Formatacao.Moeda(e) : "—")</td>
+                                                    <td class="wal-num">@(i.Creditos.Count > 0 ? Formatacao.Moeda(i.ValorRecebidoBruto) : "—")</td>
+                                                    <td class="wal-importacao-detalhe">
+                                                        @i.Detalhe
+                                                        @foreach (var n in i.NovosProventos)
+                                                        {
+                                                            <div class="wal-k">→ @n</div>
+                                                        }
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </MudSimpleTable>
+                                </div>
+                            </ChildContent>
+                        </MudExpansionPanel>
+                    }
+                    @if (previa.Informativos.Count > 0)
+                    {
+                        <MudExpansionPanel>
+                            <TitleContent>
+                                <div class="wal-importacao-grupo">
+                                    <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" />
+                                    <span class="wal-forte">Outras movimentações (@previa.Informativos.Count)</span>
+                                    <span class="wal-k">Bonificações, frações, leilões, subscrições: só para conferência, nada é alterado</span>
+                                </div>
+                            </TitleContent>
+                            <ChildContent>
+                                <div class="wal-rolagem">
+                                    <MudSimpleTable Dense="true" Elevation="0" Class="wal-tabela wal-tabela-compacta">
+                                        <thead><tr><th>Data</th><th>Movimentação</th><th>Ativo</th><th class="wal-num">Quantidade</th><th class="wal-num">Valor</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var l in previa.Informativos)
+                                            {
+                                                <tr>
+                                                    <td>@l.Data.ToString("dd/MM/yyyy")</td>
+                                                    <td>@l.Movimentacao</td>
+                                                    <td class="wal-forte">@l.Ticker</td>
+                                                    <td class="wal-num">@Formatacao.QuantidadeCurta(l.Quantidade)</td>
+                                                    <td class="wal-num">@(l.Valor is decimal v ? Formatacao.Moeda(v) : "—")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </MudSimpleTable>
+                                </div>
+                                <MudText Typo="Typo.caption" Class="wal-k">Compras e vendas liquidadas no período: @previa.Liquidacoes (não mexem em nada).</MudText>
+                            </ChildContent>
+                        </MudExpansionPanel>
+                    }
+                </MudExpansionPanels>
+                <MudText Typo="Typo.caption" Class="wal-k">
+                    Ao aplicar, uma cópia do banco é salva antes. Os proventos substituídos ficam ocultos (dá para restaurar em Eventos → Ocultos).
+                </MudText>
+            }
+            @if (erro is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@erro</MudAlert>
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        @if (previa is not null)
+        {
+            <MudButton OnClick="() => { previa = null; erro = null; }">Outro arquivo</MudButton>
+        }
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancelar</MudButton>
+        @if (previa is not null)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" DropShadow="false" Disabled="@(aplicando || previa.Alteracoes == 0)" OnClick="AplicarAsync">
+                @(previa.Alteracoes == 0 ? "Nada a aplicar" : $"Aplicar {previa.Alteracoes} {(previa.Alteracoes == 1 ? "alteração" : "alterações")}")
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] public IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private const long TamanhoMaximo = 20 * 1024 * 1024;
+
+    private PreviaImportacaoB3? previa;
+    private bool lendo;
+    private bool aplicando;
+    private string? erro;
+
+    /// <summary>Abre o diálogo; devolve o resumo se algo foi aplicado.</summary>
+    public static async Task<ResumoImportacaoB3?> AbrirAsync(IDialogService dialogos)
+    {
+        var dialogo = await dialogos.ShowAsync<DialogImportacaoB3>((string?)null,
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseOnEscapeKey = true });
+        var resultado = await dialogo.Result;
+        return resultado is { Canceled: false, Data: ResumoImportacaoB3 resumo } ? resumo : null;
+    }
+
+    public static string Mensagem(ResumoImportacaoB3 r) =>
+        $"Extrato aplicado: {r.ProventosCriados} proventos criados, {r.ProventosOcultados} substituídos/ocultados, {r.ParcelasGravadas} parcelas.";
+
+    private record Grupo(string Titulo, string Explicacao, string Icone, Color Cor, bool Aberto, List<ItemImportacaoB3> Itens);
+
+    private List<Grupo> Grupos => previa is null ? [] :
+    [
+        new("Ambíguos", "Não aplicados: corrija à mão", Icons.Material.Outlined.ErrorOutline, Color.Error, true, Itens(AcaoImportacaoB3.Ambiguo)),
+        new("Novos", "Pagos pela B3 sem provento no app", Icons.Material.Outlined.AddCircleOutline, Color.Primary, true, Itens(AcaoImportacaoB3.Criar)),
+        new("Parcelados", "Parte paga, parte a receber", Icons.Material.Outlined.Timelapse, Color.Info, true, Itens(AcaoImportacaoB3.Parcial)),
+        new("Substituídos", "Tipo, datas e valores passam a ser os da B3", Icons.Material.Outlined.SwapHoriz, Color.Success, false, Itens(AcaoImportacaoB3.Substituir)),
+        new("Novas parcelas", "Parcelas de proventos já importados", Icons.Material.Outlined.PlaylistAdd, Color.Success, false, Itens(AcaoImportacaoB3.AdicionarParcela)),
+        new("Duplicados", "Do Yahoo, repetem um já importado: serão ocultados", Icons.Material.Outlined.VisibilityOff, Color.Warning, true, Itens(AcaoImportacaoB3.OcultarDuplicado)),
+        new("Sem crédito na B3", "Só para conferência (em geral, pagamento futuro)", Icons.Material.Outlined.HourglassEmpty, Color.Default, false, Itens(AcaoImportacaoB3.SemCreditoNaB3)),
+        new("Já importados", "Nada muda", Icons.Material.Outlined.CheckCircleOutline, Color.Default, false, Itens(AcaoImportacaoB3.Confirmado)),
+    ];
+
+    private List<ItemImportacaoB3> Itens(AcaoImportacaoB3 acao) =>
+        previa!.Itens.Where(i => i.Acao == acao).OrderBy(i => i.Ticker).ThenBy(i => i.DataEx).ToList();
+
+    private async Task LerArquivosAsync(IReadOnlyList<IBrowserFile>? arquivos)
+    {
+        if (arquivos is null || arquivos.Count == 0) return;
+        erro = null;
+        lendo = true;
+        var lidos = new List<(string Nome, Stream Conteudo)>();
+        try
+        {
+            foreach (var arquivo in arquivos)
+            {
+                var memoria = new MemoryStream();
+                await using (var leitura = arquivo.OpenReadStream(TamanhoMaximo))
+                    await leitura.CopyToAsync(memoria);
+                memoria.Position = 0;
+                lidos.Add((arquivo.Name, memoria));
+            }
+
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            var resultado = await scope.ServiceProvider.GetRequiredService<IImportacaoB3Service>().PreviaAsync(lidos);
+            if (resultado.Sucesso) previa = resultado.Valor;
+            else erro = resultado.Erro;
+        }
+        catch (IOException)
+        {
+            erro = "Não foi possível ler o arquivo (limite de 20 MB).";
+        }
+        finally
+        {
+            foreach (var (_, conteudo) in lidos) await conteudo.DisposeAsync();
+            lendo = false;
+        }
+    }
+
+    private async Task AplicarAsync()
+    {
+        aplicando = true;
+        erro = null;
+        try
+        {
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            var resultado = await scope.ServiceProvider.GetRequiredService<IImportacaoB3Service>().AplicarAsync(previa!);
+            if (resultado.Sucesso) MudDialog.Close(DialogResult.Ok(resultado.Valor));
+            else erro = resultado.Erro;
+        }
+        finally
+        {
+            aplicando = false;
+        }
+    }
+}

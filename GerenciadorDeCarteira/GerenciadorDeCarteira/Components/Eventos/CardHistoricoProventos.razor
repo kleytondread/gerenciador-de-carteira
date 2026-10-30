@@ -26,6 +26,8 @@
         {
             <MudSwitch T="bool" @bind-Value="verOcultos" Color="Color.Primary" Size="Size.Small" Label="@($"Ocultos ({Ocultos.Count})")" />
         }
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.UploadFile" OnClick="OnImportar"
+                   title="Corrige tipo, datas e valores com o extrato de Movimentação da B3">Importar extrato B3</MudButton>
         <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OnLancar">Lançar provento</MudButton>
     </Acoes>
     <ChildContent>
@@ -44,7 +46,7 @@
                                 <td>@Formatacao.NomeProvento(o.Tipo)</td>
                                 <td class="wal-forte">@o.Ticker</td>
                                 <td class="wal-num">@o.ValorPorAcao.ToString("C4", Formatacao.PtBR)</td>
-                                <td class="wal-num wal-k">@o.Origem</td>
+                                <td class="wal-num wal-k">@NomeOrigem(o.Origem)</td>
                                 <td class="wal-num">
                                     <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary"
                                                StartIcon="@Icons.Material.Outlined.Restore" OnClick="() => OnRestaurar.InvokeAsync(o.Id)">Restaurar</MudButton>
@@ -95,8 +97,8 @@
                                 <td class="wal-num wal-acoes-col">
                                     <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="@($"Corrigir provento de {p.Ticker} pago em {p.DataPagamento:dd/MM/yyyy}")"
                                                    OnClick="() => OnEditar.InvokeAsync(p.ProventoId)" />
-                                    <MudIconButton Icon="@(p.Origem == OrigemDado.Manual ? Icons.Material.Outlined.Delete : Icons.Material.Outlined.VisibilityOff)" Size="Size.Small"
-                                                   aria-label="@($"{(p.Origem == OrigemDado.Manual ? "Excluir" : "Ocultar")} provento de {p.Ticker} pago em {p.DataPagamento:dd/MM/yyyy}")"
+                                    <MudIconButton Icon="@(p.Origem != OrigemDado.YahooFinance ? Icons.Material.Outlined.Delete : Icons.Material.Outlined.VisibilityOff)" Size="Size.Small"
+                                                   aria-label="@($"{(p.Origem != OrigemDado.YahooFinance ? "Excluir" : "Ocultar")} provento de {p.Ticker} pago em {p.DataPagamento:dd/MM/yyyy}")"
                                                    OnClick="() => OnExcluir.InvokeAsync(p)" />
                                 </td>
                             </tr>
@@ -130,11 +132,20 @@
 
     [Parameter] public EventCallback OnLancar { get; set; }
 
+    [Parameter] public EventCallback OnImportar { get; set; }
+
     [Parameter] public EventCallback<int> OnEditar { get; set; }
 
     [Parameter] public EventCallback<ProventoRecebidoResponse> OnExcluir { get; set; }
 
     [Parameter] public EventCallback<int> OnRestaurar { get; set; }
+
+    private static string NomeOrigem(OrigemDado origem) => origem switch
+    {
+        OrigemDado.YahooFinance => "Yahoo",
+        OrigemDado.ExtratoB3 => "Extrato B3",
+        _ => "Manual"
+    };
 
     private const int PorPagina = 20;
 

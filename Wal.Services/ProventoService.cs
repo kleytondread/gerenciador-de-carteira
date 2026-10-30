@@ -24,7 +24,7 @@ public class ProventoService(AppDbContext db) : IProventoService
         if (Validar(request.ValorPorAcao, request.DataCom, request.DataPagamento) is string erro)
             return ResultadoOperacao<ProventoResponse>.Falha(erro, TipoErroOperacao.Validacao);
 
-        if (await ExisteManualAsync(request.AtivoId, request.DataPagamento, request.Tipo, ignorarId: null))
+        if (await ExisteLancamentoAsync(request.AtivoId, OrigemDado.Manual, request.DataPagamento, request.Tipo, request.DataCom, ignorarId: null))
             return ResultadoOperacao<ProventoResponse>.Falha(
                 "Já existe um provento manual deste tipo com essa data de pagamento.", TipoErroOperacao.Conflito);
 
@@ -49,13 +49,13 @@ public class ProventoService(AppDbContext db) : IProventoService
         var provento = await db.Proventos.Include(p => p.Ativo).FirstOrDefaultAsync(p => p.Id == id);
         if (provento is null) return NaoEncontrado();
 
-        if (provento.Origem == OrigemDado.Manual)
+        if (EhLancamento(provento.Origem))
         {
             var dataCom = request.DataCom ?? provento.DataCom;
             var valor = request.ValorPorAcao ?? provento.ValorPorAcao;
             if (Validar(valor, dataCom, request.DataPagamento) is string erro)
                 return ResultadoOperacao<ProventoResponse>.Falha(erro, TipoErroOperacao.Validacao);
-            if (await ExisteManualAsync(provento.AtivoId, request.DataPagamento, request.Tipo, ignorarId: id))
+            if (await ExisteLancamentoAsync(provento.AtivoId, provento.Origem, request.DataPagamento, request.Tipo, dataCom, ignorarId: id))
                 return ResultadoOperacao<ProventoResponse>.Falha(
                     "Já existe um provento manual deste tipo com essa data de pagamento.", TipoErroOperacao.Conflito);
 
@@ -84,8 +84,8 @@ public class ProventoService(AppDbContext db) : IProventoService
         var provento = await db.Proventos.FindAsync(id);
         if (provento is null) return ResultadoOperacao.Falha("Provento não encontrado.", TipoErroOperacao.NaoEncontrado);
 
-        if (provento.Origem == OrigemDado.Manual)
-            db.Proventos.Remove(provento);
+        if (EhLancamento(provento.Origem))
+            db.Proventos.Remove(provento); // as parcelas vão junto (cascata)
         else
             provento.Oculto = true;
 
@@ -114,15 +114,19 @@ public class ProventoService(AppDbContext db) : IProventoService
         : dataCom is DateOnly c && dataPagamento < c ? "O pagamento não pode ser antes da data com."
         : null;
 
-    // O índice único (ativo, pagamento, tipo, origem) recusaria o segundo; melhor avisar antes
-    private Task<bool> ExisteManualAsync(int ativoId, DateOnly dataPagamento, TipoProvento tipo, int? ignorarId) =>
+    /// <summary>Lançado à mão ou vindo do extrato da B3: editável e apagável. Só o do Yahoo é corrigido em colunas próprias.</summary>
+    internal static bool EhLancamento(OrigemDado origem) => origem != OrigemDado.YahooFinance;
+
+    // O índice único (ativo, pagamento, tipo, origem, data com) recusaria o segundo; melhor avisar antes
+    private Task<bool> ExisteLancamentoAsync(
+        int ativoId, OrigemDado origem, DateOnly dataPagamento, TipoProvento tipo, DateOnly? dataCom, int? ignorarId) =>
         db.Proventos.AnyAsync(p =>
-            p.AtivoId == ativoId && p.Origem == OrigemDado.Manual &&
+            p.AtivoId == ativoId && p.Origem == origem && p.DataCom == dataCom &&
             p.DataPagamento == dataPagamento && p.TipoProvento == tipo && p.Id != ignorarId);
 
     private static ProventoResponse ParaResponse(Provento p) => new(
         p.Id, p.AtivoId, p.Ativo?.Ticker ?? "?", p.TipoEfetivo, p.Origem, p.DataCom, p.DataPagamentoEfetiva,
-        p.ValorPorAcao, p.Origem != OrigemDado.Manual, p.Oculto);
+        p.ValorPorAcao, !EhLancamento(p.Origem), p.Oculto);
 
     private static ResultadoOperacao<ProventoResponse> NaoEncontrado() =>
         ResultadoOperacao<ProventoResponse>.Falha("Provento não encontrado.", TipoErroOperacao.NaoEncontrado);

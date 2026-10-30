@@ -1,0 +1,188 @@
+@page "/irpf"
+@inherits PaginaCarteira
+@inject IDialogService Dialogos
+@inject ISnackbar Snackbar
+
+<PageTitle>Imposto de Renda - Gestor de Carteira B3</PageTitle>
+<SectionContent SectionName="@TituloPagina.Secao">Imposto de Renda</SectionContent>
+
+@if (Carregando)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Carregando o imposto de renda" />
+}
+else if (relatorio is null)
+{
+    <MudPaper Outlined="true" Class="pa-8 d-flex flex-column align-center gap-3">
+        <MudIcon Icon="@Icons.Material.Outlined.ReceiptLong" Size="Size.Large" />
+        <MudText Typo="Typo.h6">Sem transações ainda</MudText>
+        <MudButton Href="transacoes" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false">Lançar a primeira compra</MudButton>
+    </MudPaper>
+}
+else
+{
+    <div class="wal-irpf-topo">
+        <MudSelect T="int" Value="relatorio.Ano" ValueChanged="TrocarAnoAsync" Label="Ano-calendário" Variant="Variant.Outlined"
+                   Margin="Margin.Dense" Dense="true" Class="wal-irpf-ano">
+            @foreach (var a in relatorio.AnosDisponiveis)
+            {
+                <MudSelectItem T="int" Value="a">@a (declaração @(a + 1))</MudSelectItem>
+            }
+        </MudSelect>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.UploadFile" OnClick="ImportarAsync">
+            Importar extrato B3
+        </MudButton>
+    </div>
+    @if (relatorio.AnoEmAndamento)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+            @relatorio.Ano ainda não terminou: os valores são parciais e mudam até 31/12.
+        </MudAlert>
+    }
+    @if (!relatorio.CodigosConferidos)
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+            O programa do IRPF @(relatorio.Ano + 1) ainda não foi conferido: os códigos seguem o do IRPF @(TabelaIrpf.UltimoAnoConferido + 1).
+            Confira cada código na lista do programa novo. Lembre também das regras de 2026: JCP com IR de 17,5% e retenção de 10% sobre dividendos acima de R$ 50 mil/mês de uma mesma empresa.
+        </MudAlert>
+    }
+
+    <MudTabs Elevation="0" ApplyEffectsToContainer="true" TabPanelsClass="pt-4" Class="wal-abas" @bind-ActivePanelIndex="aba">
+        <MudTabPanel Text="Conferência" BadgeData="@Contador(AbaIrpf.Conferencia, todas: true)" BadgeColor="Color.Error">
+            <AbaConferencia Relatorio="relatorio" OnCorrigirProvento="CorrigirProventoAsync" OnEditarAtivo="EditarAtivoAsync"
+                            OnImportar="ImportarAsync" OnIrPara="a => aba = (int)a" />
+        </MudTabPanel>
+        <MudTabPanel Text="Bens e Direitos" BadgeData="@Contador(AbaIrpf.BensDireitos)" BadgeColor="Color.Error">
+            <AbaBensDireitos Itens="relatorio.BensDireitos" Ano="relatorio.Ano" Mascarar="Mascarar" />
+        </MudTabPanel>
+        <MudTabPanel Text="Rendimentos Isentos" BadgeData="@Contador(AbaIrpf.RendimentosIsentos)" BadgeColor="Color.Error">
+            <AbaRendimentos Itens="relatorio.Isentos" Ficha="Rendimentos Isentos e Não Tributáveis" Ano="relatorio.Ano" Mascarar="Mascarar"
+                            Bloqueios="ProventosNaoConferidos" />
+        </MudTabPanel>
+        <MudTabPanel Text="Tributação Exclusiva" BadgeData="@Contador(AbaIrpf.TributacaoExclusiva)" BadgeColor="Color.Error">
+            <AbaRendimentos Itens="relatorio.Exclusivos" Ficha="Rendimentos Sujeitos à Tributação Exclusiva/Definitiva" Ano="relatorio.Ano"
+                            Mascarar="Mascarar" Bloqueios="ProventosNaoConferidos">
+                <Introducao>
+                    <MudText Typo="Typo.body2">
+                        Também vão nesta ficha, pelo informe de rendimentos de cada instituição: vendas e cupons do Tesouro Direto e de ETF de renda fixa
+                        (código 06, fonte pagadora @relatorio.Corretora.Nome, CNPJ @relatorio.Corretora.Cnpj), CDB/RDB e aplicações fora do app.
+                    </MudText>
+                </Introducao>
+            </AbaRendimentos>
+        </MudTabPanel>
+        <MudTabPanel Text="Renda Variável" BadgeData="@Contador(AbaIrpf.RendaVariavel)" BadgeColor="Color.Error">
+            <AbaRendaVariavel MesesBolsa="relatorio.RendaVariavel" MesesFii="relatorio.RendaVariavelFii" Darfs="relatorio.Darfs"
+                              Ano="relatorio.Ano" Mascarar="Mascarar" OnRegistrarDarf="RegistrarDarfAsync" OnExcluirDarf="ExcluirDarfAsync" />
+        </MudTabPanel>
+    </MudTabs>
+}
+
+@code {
+    private RelatorioIrpfResponse? relatorio;
+    private int? anoEscolhido;
+    private int aba;
+
+    private IIrpfService Servico => ScopedServices.GetRequiredService<IIrpfService>();
+
+    protected override async Task CarregarAsync() => relatorio = await Servico.ObterAsync(anoEscolhido);
+
+    private int ProventosNaoConferidos =>
+        relatorio?.Pendencias.Count(p => p.Tipo is TipoPendenciaIrpf.ProventoNaoConferido or TipoPendenciaIrpf.ProventoSemDataCom) ?? 0;
+
+    // Pendências que bloqueiam, contadas na aba que afetam (a Conferência mostra todas); nulo esconde o selo
+    private object? Contador(AbaIrpf alvo, bool todas = false)
+    {
+        var n = relatorio?.Pendencias.Count(p => p.Gravidade == GravidadePendencia.Bloqueia && (todas || p.Aba == alvo)) ?? 0;
+        return n > 0 ? n : null;
+    }
+
+    private async Task TrocarAnoAsync(int ano)
+    {
+        anoEscolhido = ano;
+        await RecarregarAsync();
+    }
+
+    private void AposAlterar(string mensagem)
+    {
+        Notificacoes.NotificarAlteracao();
+        Snackbar.Add(mensagem, Severity.Success);
+    }
+
+    private async Task ImportarAsync()
+    {
+        if (await DialogImportacaoB3.AbrirAsync(Dialogos) is ResumoImportacaoB3 resumo)
+            AposAlterar(DialogImportacaoB3.Mensagem(resumo));
+    }
+
+    private async Task CorrigirProventoAsync(int proventoId)
+    {
+        var servico = ScopedServices.GetRequiredService<IProventoService>();
+        var provento = await servico.ObterAsync(proventoId);
+        if (provento.Valor is null)
+        {
+            Snackbar.Add(provento.Erro ?? "Provento não encontrado.", Severity.Error);
+            return;
+        }
+        var parametros = new DialogParameters<DialogProvento>
+        {
+            { d => d.Provento, provento.Valor },
+            { d => d.Ativos, new List<AtivoResponse>() },
+            { d => d.Salvar, async dados =>
+                {
+                    var editado = await servico.EditarAsync(proventoId,
+                        new EditarProventoRequest(dados.Tipo, dados.DataPagamento, dados.DataCom, dados.ValorPorAcao));
+                    return editado.Sucesso ? null : editado.Erro;
+                } }
+        };
+        var dialogo = await Dialogos.ShowAsync<DialogProvento>(null, parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        if (await dialogo.Result is { Canceled: false }) AposAlterar("Provento corrigido.");
+    }
+
+    private async Task EditarAtivoAsync(int ativoId)
+    {
+        var ativo = (await ScopedServices.GetRequiredService<IAtivoService>().ObterRastreadosAsync()).FirstOrDefault(a => a.Id == ativoId);
+        if (ativo is null) return;
+        var dialogo = await Dialogos.ShowAsync<DialogAtivo>(null, new DialogParameters<DialogAtivo> { { d => d.Editando, ativo } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        if (await dialogo.Result is { Canceled: false }) AposAlterar($"{ativo.Ticker} atualizado.");
+    }
+
+    private async Task RegistrarDarfAsync((int Mes, FichaRendaVariavel Ficha, decimal Valor) pedido)
+    {
+        var parametros = new DialogParameters<DialogDarf>
+        {
+            { d => d.Ano, relatorio!.Ano },
+            { d => d.Mes, pedido.Mes },
+            { d => d.Ficha, pedido.Ficha },
+            { d => d.ValorSugerido, pedido.Valor },
+            { d => d.Salvar, async request =>
+                {
+                    var r = await Servico.RegistrarDarfAsync(request);
+                    return r.Sucesso ? null : r.Erro;
+                } }
+        };
+        var dialogo = await Dialogos.ShowAsync<DialogDarf>(null, parametros,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        if (await dialogo.Result is { Canceled: false })
+        {
+            await RecarregarAsync();
+            Snackbar.Add("DARF registrado.", Severity.Success);
+        }
+    }
+
+    private async Task ExcluirDarfAsync(DarfResponse darf)
+    {
+        var confirmado = await Dialogos.ShowMessageBoxAsync("Excluir DARF?",
+            $"O DARF de {darf.Mes:00}/{darf.Ano} ({Formatacao.Moeda(darf.ValorPrincipal)}) deixa de contar como imposto pago.",
+            yesText: "Excluir", cancelText: "Cancelar");
+        if (confirmado != true) return;
+        var r = await Servico.ExcluirDarfAsync(darf.Id);
+        if (!r.Sucesso)
+        {
+            Snackbar.Add(r.Erro ?? "Não foi possível excluir.", Severity.Error);
+            return;
+        }
+        await RecarregarAsync();
+        Snackbar.Add("DARF excluído.", Severity.Success);
+    }
+}

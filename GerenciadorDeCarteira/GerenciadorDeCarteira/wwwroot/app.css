@@ -945,6 +945,8 @@ h1:focus { outline: none; }
 /* ── Ativos rastreados ──────────────────────────────────────────────────────── */
 
 .wal-abas .mud-tabs-tabbar { background: transparent; border-bottom: 1px solid var(--mud-palette-lines-default); }
+/* A aba corta o que passa da borda (overflow: hidden); o contador fica sobre o canto do texto e precisa de folga */
+.wal-abas .mud-tab:has(.mud-badge) { padding-right: 24px; }
 
 .wal-alerta-corpo {
     display: flex;
@@ -1006,3 +1008,162 @@ h1:focus { outline: none; }
 
 /* Rótulo pequeno em cima de um controle sem rótulo próprio (ex.: MudToggleGroup no formulário) */
 .wal-campo-rotulado { display: flex; flex-direction: column; gap: 6px; }
+
+/* ── Imposto de Renda ───────────────────────────────────────────────────────── */
+
+.wal-irpf-topo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.wal-irpf-ano { width: 240px; flex: 0 0 auto; }
+
+.wal-irpf-passos { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+
+.wal-icone-texto { vertical-align: text-bottom; font-size: 16px !important; }
+
+/* Pendências: ícone + texto (a cor nunca é a única pista) */
+.wal-pendencias { list-style: none; margin: 0; padding: 0; }
+
+.wal-pendencia {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 10px;
+    padding: 10px 20px;
+    border-top: 1px solid var(--mud-palette-lines-default);
+}
+
+    .wal-pendencia:first-child { border-top: none; }
+
+.wal-pendencia-texto { display: flex; flex-direction: column; gap: 2px; }
+.wal-pendencia-icone { margin-top: 2px; }
+.wal-pendencia-bloqueia .wal-pendencia-icone { color: var(--mud-palette-error); }
+.wal-pendencia-aviso .wal-pendencia-icone { color: #e09b00; }
+.wal-pendencia-informacao .wal-pendencia-icone { color: var(--mud-palette-text-secondary); }
+
+/* Bens e Direitos: um card por item, campos na ordem do programa */
+.wal-bem { padding: 14px 18px; }
+
+.wal-bem-cabecalho {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.wal-bem-codigo {
+    font-weight: 600;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(42, 120, 214, .14);
+    color: var(--mud-palette-primary);
+}
+
+.wal-ficha {
+    display: grid;
+    grid-template-columns: minmax(130px, auto) minmax(0, 1fr);
+    gap: 6px 14px;
+    margin: 0;
+    font-size: 13px;
+}
+
+    .wal-ficha dt { color: var(--mud-palette-text-secondary); padding-top: 5px; }
+    .wal-ficha dd { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
+
+@media (max-width: 599px) {
+    .wal-ficha { grid-template-columns: minmax(0, 1fr); }
+    .wal-ficha dt { padding-top: 6px; }
+}
+
+.wal-selo {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 1px 7px;
+    border-radius: 10px;
+    border: 1px solid var(--mud-palette-lines-default);
+    color: var(--mud-palette-text-secondary);
+    white-space: nowrap;
+    cursor: help;
+}
+
+    .wal-selo .mud-icon-root { font-size: 14px; }
+
+.wal-selo-aviso { color: #9a6700; border-color: #e09b00; }
+.wal-selo-erro { color: var(--mud-palette-error); border-color: var(--mud-palette-error); }
+
+[data-tema='dark'] .wal-selo-aviso { color: #f2c14e; }
+
+/* Valor com botão de copiar */
+.wal-copiavel { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
+.wal-copiavel-texto { overflow-wrap: anywhere; }
+.wal-copiavel .wal-copiar { padding: 4px; }
+.wal-copiavel .wal-copiar .mud-icon-root { font-size: 16px; }
+
+.wal-copiavel-bloco {
+    display: flex;
+    align-items: flex-start;
+    width: 100%;
+    padding: 6px 4px 6px 10px;
+    border-radius: 6px;
+    background: var(--mud-palette-background-gray);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+    .wal-copiavel-bloco .wal-copiavel-texto { flex: 1 1 auto; white-space: normal; }
+
+/* Detalhe que abre embaixo de uma linha */
+.wal-linha-detalhe > td { background: var(--mud-palette-background-gray); white-space: normal !important; }
+
+.wal-composicao { width: 100%; border-collapse: collapse; font-size: 12px; }
+
+    .wal-composicao th {
+        text-align: left;
+        font-weight: 500;
+        color: var(--mud-palette-text-secondary);
+        padding: 4px 8px;
+        border-bottom: 1px solid var(--mud-palette-lines-default);
+    }
+
+    .wal-composicao td { padding: 4px 8px; border-bottom: 1px solid var(--mud-palette-lines-default); }
+
+.wal-card-nota {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    padding: 10px 20px;
+    font-size: 12px;
+    color: var(--mud-palette-text-secondary);
+    border-top: 1px solid var(--mud-palette-lines-default);
+}
+
+.wal-rv-detalhe {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    padding: 8px 4px;
+}
+
+@media (max-width: 1099.98px) {
+    .wal-rv-detalhe { grid-template-columns: minmax(0, 1fr); }
+}
+
+.wal-rv-titulo { font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+.wal-rv-nota { font-size: 12px; margin: 8px 0; }
+
+/* Importação do extrato da B3 */
+.wal-importacao-resumo { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
+.wal-importacao-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.wal-importacao-grupo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.wal-importacao-credito { white-space: nowrap; }
+.wal-importacao-detalhe { white-space: normal !important; min-width: 260px; font-size: 12px; }

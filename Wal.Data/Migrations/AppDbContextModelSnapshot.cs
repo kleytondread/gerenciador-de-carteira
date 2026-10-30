@@ -26,6 +26,9 @@ namespace Wal.Data.Migrations
                     b.Property<int>("Categoria")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Cnpj")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("DataCadastro")
                         .HasColumnType("TEXT");
 
@@ -123,6 +126,35 @@ namespace Wal.Data.Migrations
                     b.ToTable("CotacoesIndices");
                 });
 
+            modelBuilder.Entity("Wal.Domain.Entities.DarfPago", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Ano")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateOnly>("DataPagamento")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Ficha")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Mes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("ValorPrincipal")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Ano", "Mes");
+
+                    b.ToTable("DarfsPagos");
+                });
+
             modelBuilder.Entity("Wal.Domain.Entities.EventoCorporativo", b =>
                 {
                     b.Property<int>("Id")
@@ -191,6 +223,37 @@ namespace Wal.Data.Migrations
                     b.ToTable("Movimentacoes");
                 });
 
+            modelBuilder.Entity("Wal.Domain.Entities.PagamentoProvento", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateOnly>("Data")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProventoId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("Quantidade")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("ValorBruto")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("ValorLiquido")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProventoId", "Data");
+
+                    b.ToTable("PagamentosProventos");
+                });
+
             modelBuilder.Entity("Wal.Domain.Entities.Provento", b =>
                 {
                     b.Property<int>("Id")
@@ -230,7 +293,7 @@ namespace Wal.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AtivoId", "DataPagamento", "TipoProvento", "Origem")
+                    b.HasIndex("AtivoId", "DataPagamento", "TipoProvento", "Origem", "DataCom")
                         .IsUnique();
 
                     b.ToTable("Proventos");
@@ -269,6 +332,17 @@ namespace Wal.Data.Migrations
                     b.Navigation("Ativo");
                 });
 
+            modelBuilder.Entity("Wal.Domain.Entities.PagamentoProvento", b =>
+                {
+                    b.HasOne("Wal.Domain.Entities.Provento", "Provento")
+                        .WithMany("Pagamentos")
+                        .HasForeignKey("ProventoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Provento");
+                });
+
             modelBuilder.Entity("Wal.Domain.Entities.Provento", b =>
                 {
                     b.HasOne("Wal.Domain.Entities.Ativo", "Ativo")
@@ -289,6 +363,11 @@ namespace Wal.Data.Migrations
                     b.Navigation("Movimentacoes");
 
                     b.Navigation("Proventos");
+                });
+
+            modelBuilder.Entity("Wal.Domain.Entities.Provento", b =>
+                {
+                    b.Navigation("Pagamentos");
                 });
 #pragma warning restore 612, 618
         }

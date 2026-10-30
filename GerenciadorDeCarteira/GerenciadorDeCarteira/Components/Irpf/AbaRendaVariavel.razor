@@ -1,0 +1,275 @@
+@* Demonstrativo de Renda Variável: mês a mês, com os campos do programa e as vendas que formam cada resultado *@
+
+<div class="wal-painel">
+    <CardPainel Titulo="Renda Variável" Subtitulo="@($"ganhos em bolsa · {Ano}")" Class="wal-s12">
+        <Acoes>
+            <MudToggleGroup T="FichaRendaVariavel" @bind-Value="ficha" Outlined="true" Delimiters="true" Color="Color.Primary" Size="Size.Small" aria-label="Ficha">
+                <MudToggleItem T="FichaRendaVariavel" Value="FichaRendaVariavel.OperacoesComuns" Text="Operações comuns / day trade" />
+                <MudToggleItem T="FichaRendaVariavel" Value="FichaRendaVariavel.FundosImobiliarios" Text="FII / Fiagro" />
+            </MudToggleGroup>
+        </Acoes>
+        <ChildContent>
+            <MudText Typo="Typo.body2">
+                No programa você digita, mês a mês, o <strong>resultado</strong> (linha "Mercado à vista – ações", que também recebe ETF e BDR),
+                o <strong>IR retido na fonte</strong> e o <strong>imposto pago</strong>. O programa calcula o resto: compare com esta tabela.
+                @if (ficha == FichaRendaVariavel.OperacoesComuns)
+                {
+                    <span>Em meses com vendas de ações até R$ 20 mil, o ganho com ações não entra aqui: vai em Rendimentos Isentos (código 20).</span>
+                }
+            </MudText>
+        </ChildContent>
+    </CardPainel>
+
+    <CardPainel Titulo="@(ficha == FichaRendaVariavel.OperacoesComuns ? "Operações comuns e day trade" : "Fundos imobiliários e Fiagro")"
+                Subtitulo="clique num mês para ver os campos e as vendas" SemEspacamento="true" Class="wal-s12">
+        <div class="wal-rolagem">
+            <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="wal-tabela wal-tabela-clicavel">
+                <thead>
+                    <tr>
+                        <th>Mês</th>
+                        @if (ficha == FichaRendaVariavel.OperacoesComuns)
+                        {
+                            <th class="wal-num">Vendas de ações</th>
+                            <th class="wal-num">Isento (cód. 20)</th>
+                        }
+                        <th class="wal-num">Resultado</th>
+                        @if (ficha == FichaRendaVariavel.OperacoesComuns)
+                        {
+                            <th class="wal-num">Day trade</th>
+                        }
+                        <th class="wal-num">Prejuízo a compensar</th>
+                        <th class="wal-num">Imposto devido</th>
+                        <th class="wal-num">IR retido</th>
+                        <th class="wal-num">A recolher</th>
+                        <th class="wal-num">Pago</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var m in Meses)
+                    {
+                        var aberto = mesAberto == m.Mes;
+                        <tr class="@(m.TemMovimento ? null : "wal-linha-pausada")" @onclick="() => mesAberto = aberto ? null : m.Mes">
+                            <td class="wal-forte">@NomeMes(m.Mes)</td>
+                            @if (ficha == FichaRendaVariavel.OperacoesComuns)
+                            {
+                                <td class="wal-num">@Valor(m.AlienacoesAcoes)</td>
+                                <td class="wal-num">@Valor(m.GanhoIsentoAcoes)</td>
+                            }
+                            <td class="@($"wal-num {Formatacao.CorGanhoPerda(m.Comum.Resultado)}")">@Valor(m.Comum.Resultado)</td>
+                            @if (ficha == FichaRendaVariavel.OperacoesComuns)
+                            {
+                                <td class="@($"wal-num {Formatacao.CorGanhoPerda(m.DayTrade?.Resultado)}")">@Valor(m.DayTrade?.Resultado ?? 0)</td>
+                            }
+                            <td class="wal-num">@Valor(m.Comum.PrejuizoACompensar + (m.DayTrade?.PrejuizoACompensar ?? 0))</td>
+                            <td class="wal-num">@Valor(m.Comum.ImpostoDevido + (m.DayTrade?.ImpostoDevido ?? 0))</td>
+                            <td class="wal-num">@Valor(m.IrrfMes)</td>
+                            <td class="wal-num wal-forte">@Valor(m.ARecolher)</td>
+                            <td class="wal-num">@Valor(m.ImpostoPago)</td>
+                            <td class="wal-num">
+                                @if (m.DarfPendente > 0)
+                                {
+                                    <MudTooltip Text="@($"Falta DARF de {Formatacao.Moeda(m.DarfPendente)}")">
+                                        <span class="wal-selo wal-selo-erro"><MudIcon Icon="@Icons.Material.Outlined.ErrorOutline" Size="Size.Small" />DARF</span>
+                                    </MudTooltip>
+                                }
+                                else if (m.AcumuladoAnterior > 0 || (m.ARecolher == 0 && m.Comum.ImpostoDevido + (m.DayTrade?.ImpostoDevido ?? 0) > 0))
+                                {
+                                    <MudTooltip Text="Imposto abaixo de R$ 10: soma ao do mês seguinte (não se paga DARF menor que R$ 10)">
+                                        <span class="wal-selo">acumula</span>
+                                    </MudTooltip>
+                                }
+                            </td>
+                        </tr>
+                        @if (aberto)
+                        {
+                            <tr class="wal-linha-detalhe">
+                                <td colspan="12">
+                                    <div class="wal-rv-detalhe">
+                                        <div>
+                                            <h3 class="wal-rv-titulo">Campos da ficha — @NomeMes(m.Mes)</h3>
+                                            <table class="wal-composicao">
+                                                <thead>
+                                                    <tr>
+                                                        <th></th>
+                                                        <th class="wal-num">@(ficha == FichaRendaVariavel.OperacoesComuns ? "Operações comuns" : "Valor")</th>
+                                                        @if (m.DayTrade is not null)
+                                                        {
+                                                            <th class="wal-num">Day trade</th>
+                                                        }
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td>@(ficha == FichaRendaVariavel.OperacoesComuns ? "Mercado à vista – ações (resultado)" : "Resultado líquido do mês")</td>
+                                                        <td class="wal-num"><CampoCopiavel Moeda="m.Comum.Resultado" Rotulo="resultado" Mascarar="Mascarar" /></td>
+                                                        @if (m.DayTrade is { } dt)
+                                                        {
+                                                            <td class="wal-num"><CampoCopiavel Moeda="dt.Resultado" Rotulo="resultado de day trade" Mascarar="Mascarar" /></td>
+                                                        }
+                                                    </tr>
+                                                    @foreach (var (rotulo, comum, dayTrade) in Linhas(m))
+                                                    {
+                                                        <tr class="wal-linha-ref">
+                                                            <td>@rotulo</td>
+                                                            <td class="wal-num">@comum</td>
+                                                            @if (m.DayTrade is not null)
+                                                            {
+                                                                <td class="wal-num">@dayTrade</td>
+                                                            }
+                                                        </tr>
+                                                    }
+                                                    <tr>
+                                                        <td>IR fonte (Lei 11.033/2004) no mês <span class="wal-k">estimado</span></td>
+                                                        <td class="wal-num"><CampoCopiavel Moeda="m.IrrfMes" Rotulo="IR retido" Mascarar="Mascarar" /></td>
+                                                        @if (m.DayTrade is not null)
+                                                        {
+                                                            <td></td>
+                                                        }
+                                                    </tr>
+                                                    <tr class="wal-linha-ref">
+                                                        <td>Imposto a pagar (do mês)</td>
+                                                        <td class="wal-num">@Valor(m.ImpostoAPagar)</td>
+                                                        @if (m.DayTrade is not null)
+                                                        {
+                                                            <td></td>
+                                                        }
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Imposto pago</td>
+                                                        <td class="wal-num"><CampoCopiavel Moeda="m.ImpostoPago" Rotulo="imposto pago" Mascarar="Mascarar" /></td>
+                                                        @if (m.DayTrade is not null)
+                                                        {
+                                                            <td></td>
+                                                        }
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                            <p class="wal-k wal-rv-nota">
+                                                IR retido estimado: 0,005% das vendas de cada dia (dispensado até R$ 1,00) e 1% do ganho de day trade. Confira nas notas de corretagem.
+                                                @if (m.AcumuladoAnterior > 0)
+                                                {
+                                                    <span>Inclui @Formatacao.Moeda(m.AcumuladoAnterior) de meses anteriores abaixo de R$ 10.</span>
+                                                }
+                                            </p>
+                                            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Receipt"
+                                                       OnClick="() => OnRegistrarDarf.InvokeAsync((m.Mes, ficha, m.DarfPendente))">Registrar DARF deste mês</MudButton>
+                                        </div>
+                                        <div>
+                                            <h3 class="wal-rv-titulo">Vendas</h3>
+                                            @if (m.Vendas.Count == 0)
+                                            {
+                                                <span class="wal-k">Nenhuma venda no mês.</span>
+                                            }
+                                            else
+                                            {
+                                                <table class="wal-composicao">
+                                                    <thead><tr><th>Dia</th><th>Ativo</th><th class="wal-num">Qtd.</th><th class="wal-num">Venda (líq.)</th><th class="wal-num">Custo</th><th class="wal-num">Resultado</th></tr></thead>
+                                                    <tbody>
+                                                        @foreach (var v in m.Vendas)
+                                                        {
+                                                            <tr>
+                                                                <td>@v.Data.ToString("dd/MM")</td>
+                                                                <td>
+                                                                    <span class="wal-forte">@v.Ticker</span>
+                                                                    @if (v.DayTrade)
+                                                                    {
+                                                                        <span class="wal-selo">day trade</span>
+                                                                    }
+                                                                    @if (v.Classe is ClasseFiscal.EtfRendaVariavel or ClasseFiscal.Bdr)
+                                                                    {
+                                                                        <MudTooltip Text="ETF e BDR não têm a isenção de R$ 20 mil"><span class="wal-selo">@(v.Classe == ClasseFiscal.Bdr ? "BDR" : "ETF")</span></MudTooltip>
+                                                                    }
+                                                                </td>
+                                                                <td class="wal-num">@Formatacao.QuantidadeCurta(v.Quantidade)</td>
+                                                                <td class="wal-num">@Formatacao.Moeda(v.ValorVenda, Mascarar)</td>
+                                                                <td class="wal-num">@Formatacao.Moeda(v.Custo, Mascarar)</td>
+                                                                <td class="@($"wal-num {Formatacao.CorGanhoPerda(v.Resultado)}")">@Formatacao.MoedaComSinal(v.Resultado, Mascarar)</td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                            }
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </div>
+    </CardPainel>
+
+    <CardPainel Titulo="DARFs registrados" Subtitulo="@($"{DarfsDaFicha.Count} em {Ano}")" SemEspacamento="true" Class="wal-s12">
+        <Acoes>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Add"
+                       OnClick="() => OnRegistrarDarf.InvokeAsync((1, ficha, 0m))">Registrar DARF</MudButton>
+        </Acoes>
+        <ChildContent>
+            @if (DarfsDaFicha.Count == 0)
+            {
+                <div class="wal-vazio pa-4">Nenhum DARF registrado nesta ficha em @Ano.</div>
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Elevation="0" Class="wal-tabela wal-tabela-acoes">
+                    <thead><tr><th>Apuração</th><th>Pago em</th><th class="wal-num">Principal</th><th class="wal-acoes-col"></th></tr></thead>
+                    <tbody>
+                        @foreach (var d in DarfsDaFicha)
+                        {
+                            <tr>
+                                <td>@NomeMes(d.Mes)/@d.Ano</td>
+                                <td>@d.DataPagamento.ToString("dd/MM/yyyy")</td>
+                                <td class="wal-num">@Formatacao.Moeda(d.ValorPrincipal, Mascarar)</td>
+                                <td class="wal-acoes-col">
+                                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="@($"Excluir DARF de {NomeMes(d.Mes)}")"
+                                                   OnClick="() => OnExcluirDarf.InvokeAsync(d)" />
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </ChildContent>
+    </CardPainel>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<MesRendaVariavelResponse> MesesBolsa { get; set; } = [];
+
+    [Parameter, EditorRequired] public IReadOnlyList<MesRendaVariavelResponse> MesesFii { get; set; } = [];
+
+    [Parameter, EditorRequired] public IReadOnlyList<DarfResponse> Darfs { get; set; } = [];
+
+    [Parameter] public int Ano { get; set; }
+
+    [Parameter] public bool Mascarar { get; set; }
+
+    /// <summary>(mês, ficha, valor sugerido)</summary>
+    [Parameter] public EventCallback<(int Mes, FichaRendaVariavel Ficha, decimal Valor)> OnRegistrarDarf { get; set; }
+
+    [Parameter] public EventCallback<DarfResponse> OnExcluirDarf { get; set; }
+
+    private FichaRendaVariavel ficha = FichaRendaVariavel.OperacoesComuns;
+    private int? mesAberto;
+
+    private IReadOnlyList<MesRendaVariavelResponse> Meses => ficha == FichaRendaVariavel.OperacoesComuns ? MesesBolsa : MesesFii;
+
+    private List<DarfResponse> DarfsDaFicha => Darfs.Where(d => d.Ficha == ficha).ToList();
+
+    private string Valor(decimal v) => v == 0 ? "—" : Formatacao.Moeda(v, Mascarar);
+
+    private static string NomeMes(int mes) => Formatacao.MesCurto(new DateOnly(2000, mes, 1), comAno: false);
+
+    // Linhas que o programa calcula sozinho: só para conferência
+    private IEnumerable<(string Rotulo, string Comum, string DayTrade)> Linhas(MesRendaVariavelResponse m)
+    {
+        var dt = m.DayTrade;
+        yield return ("Resultado negativo até o mês anterior", Valor(m.Comum.PrejuizoAnterior), Valor(dt?.PrejuizoAnterior ?? 0));
+        yield return ("Base de cálculo do imposto", Valor(m.Comum.BaseCalculo), Valor(dt?.BaseCalculo ?? 0));
+        yield return ("Prejuízo a compensar", Valor(m.Comum.PrejuizoACompensar), Valor(dt?.PrejuizoACompensar ?? 0));
+        yield return ("Alíquota do imposto", m.Comum.Aliquota.ToString("P0", Formatacao.PtBR), dt?.Aliquota.ToString("P0", Formatacao.PtBR) ?? "");
+        yield return ("Imposto devido", Valor(m.Comum.ImpostoDevido), Valor(dt?.ImpostoDevido ?? 0));
+    }
+}

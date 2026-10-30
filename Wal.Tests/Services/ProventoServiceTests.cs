@@ -72,13 +72,24 @@ public class ProventoServiceTests : SqliteInMemoryTestBase
     }
 
     [Fact]
-    public async Task LancarAsync_RepetidoNaMesmaDataETipo_RecusaComConflito()
+    public async Task LancarAsync_RepetidoNaMesmaDataTipoEDataCom_RecusaComConflito()
     {
+        await sut.LancarAsync(new LancarProventoRequest(ativo.Id, TipoProvento.JCP, D(3, 10), D(4, 1), 0.25m));
+
+        var resultado = await sut.LancarAsync(new LancarProventoRequest(ativo.Id, TipoProvento.JCP, D(3, 10), D(4, 1), 0.10m));
+
+        Assert.Equal(TipoErroOperacao.Conflito, resultado.TipoErro);
+    }
+
+    [Fact]
+    public async Task LancarAsync_MesmoPagamentoComDataComDiferente_Aceita()
+    {
+        // JCPs de créditos diferentes pagos no mesmo dia (ex.: ITSA4 em 07/03/2025)
         await sut.LancarAsync(new LancarProventoRequest(ativo.Id, TipoProvento.JCP, D(3, 10), D(4, 1), 0.25m));
 
         var resultado = await sut.LancarAsync(new LancarProventoRequest(ativo.Id, TipoProvento.JCP, D(3, 12), D(4, 1), 0.10m));
 
-        Assert.Equal(TipoErroOperacao.Conflito, resultado.TipoErro);
+        Assert.True(resultado.Sucesso);
     }
 
     [Fact]

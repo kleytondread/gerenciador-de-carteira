@@ -1,0 +1,92 @@
+@* Registro de um DARF pago (código 6015) sobre o ganho em bolsa de um mês de apuração *@
+
+<MudDialog>
+    <TitleContent>Registrar DARF pago</TitleContent>
+    <DialogContent>
+        <div class="wal-formulario">
+            <div class="wal-campo-rotulado">
+                <span class="wal-k" id="rotulo-ficha">Ficha</span>
+                <MudToggleGroup T="FichaRendaVariavel" @bind-Value="ficha" Outlined="true" Delimiters="true" Color="Color.Primary"
+                                Size="Size.Small" aria-labelledby="rotulo-ficha">
+                    <MudToggleItem T="FichaRendaVariavel" Value="FichaRendaVariavel.OperacoesComuns" Text="Ações, ETF, BDR" />
+                    <MudToggleItem T="FichaRendaVariavel" Value="FichaRendaVariavel.FundosImobiliarios" Text="FII/Fiagro" />
+                </MudToggleGroup>
+            </div>
+            <div class="wal-formulario-linha">
+                <MudSelect T="int" @bind-Value="mes" Label="Mês de apuração" Variant="Variant.Outlined"
+                           HelperText="O mês das vendas, não o do pagamento">
+                    @for (var m = 1; m <= 12; m++)
+                    {
+                        var valor = m;
+                        <MudSelectItem T="int" Value="valor">@Formatacao.PtBR.TextInfo.ToTitleCase(Formatacao.PtBR.DateTimeFormat.GetMonthName(valor))</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudNumericField T="int" @bind-Value="ano" Label="Ano" Variant="Variant.Outlined" Min="2000" Max="2100" HideSpinButtons="true" />
+            </div>
+            <div class="wal-formulario-linha">
+                <MudNumericField T="decimal" @bind-Value="valor" Label="Valor principal (R$)" Variant="Variant.Outlined" Min="0" Format="N2"
+                                 Culture="Formatacao.PtBR" HideSpinButtons="true" HelperText="Sem multa e juros" />
+                <MudDatePicker @bind-Date="pagamento" Label="Data do pagamento" Variant="Variant.Outlined" DateFormat="dd/MM/yyyy"
+                               Culture="Formatacao.PtBR" />
+            </div>
+            @if (erro is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@erro</MudAlert>
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" DropShadow="false" Disabled="salvando" OnClick="SalvarAsync">Registrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] public IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public int Ano { get; set; }
+
+    [Parameter] public int Mes { get; set; } = 1;
+
+    [Parameter] public FichaRendaVariavel Ficha { get; set; }
+
+    [Parameter] public decimal ValorSugerido { get; set; }
+
+    /// <summary>Grava e devolve o erro, ou nulo se deu certo.</summary>
+    [Parameter, EditorRequired] public Func<RegistrarDarfRequest, Task<string?>> Salvar { get; set; } = default!;
+
+    private int ano;
+    private int mes;
+    private FichaRendaVariavel ficha;
+    private decimal valor;
+    private DateTime? pagamento = DateTime.Today;
+    private string? erro;
+    private bool salvando;
+
+    protected override void OnInitialized()
+    {
+        ano = Ano;
+        mes = Mes;
+        ficha = Ficha;
+        valor = ValorSugerido;
+    }
+
+    private async Task SalvarAsync()
+    {
+        if (pagamento is null)
+        {
+            erro = "Informe a data do pagamento.";
+            return;
+        }
+        salvando = true;
+        try
+        {
+            erro = await Salvar(new RegistrarDarfRequest(ano, mes, ficha, valor, DateOnly.FromDateTime(pagamento.Value)));
+            if (erro is null) MudDialog.Close(DialogResult.Ok(true));
+        }
+        finally
+        {
+            salvando = false;
+        }
+    }
+}

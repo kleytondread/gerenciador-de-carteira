@@ -75,6 +75,14 @@
                 </div>
             }
 
+            @if (tipo != TipoAtivo.Tesouro)
+            {
+                @* Exigido na declaração do IR (empresa ou fundo, sempre o da matriz) *@
+                <MudTextField T="string" @bind-Value="cnpj" Label="CNPJ do emissor" Variant="Variant.Outlined"
+                              Mask="@(new PatternMask("00.000.000/0000-00"))" Placeholder="00.000.000/0001-00"
+                              HelperText="Da empresa ou do fundo (matriz). Usado no Imposto de Renda." />
+            }
+
             @if (erro is not null)
             {
                 <MudAlert Severity="Severity.Error" Dense="true">@erro</MudAlert>
@@ -100,6 +108,7 @@
     private TipoAtivo tipo = TipoAtivo.Acao;
     private string ticker = string.Empty;
     private string nome = string.Empty;
+    private string? cnpj;
     private string? erro;
     private bool salvando;
 
@@ -120,6 +129,7 @@
         if (Editando is null) return;
         tipo = Editando.Tipo;
         nome = Editando.Nome;
+        cnpj = Cnpj.Normalizar(Editando.Cnpj) is string d ? Cnpj.Formatar(d) : null;
         alocacao = Editando.Categoria;
         alocacaoEscolhida = true;
     }
@@ -180,7 +190,7 @@
             var servico = scope.ServiceProvider.GetRequiredService<IAtivoService>();
             if (Editando is not null)
             {
-                var editado = await servico.EditarAsync(Editando.Id, new EditarAtivoRequest(nome, tipo, alocacao));
+                var editado = await servico.EditarAsync(Editando.Id, new EditarAtivoRequest(nome, tipo, alocacao, cnpj ?? string.Empty));
                 if (editado.Sucesso) MudDialog.Close(DialogResult.Ok(editado.Valor!.Ticker));
                 else erro = editado.Erro;
                 return;
@@ -193,7 +203,7 @@
             }
             var pedido = tipo == TipoAtivo.Tesouro
                 ? new CriarAtivoRequest(titulo!.Ticker, titulo.Nome, TipoAtivo.Tesouro, titulo.TipoTitulo, titulo.Vencimento)
-                : new CriarAtivoRequest(ticker, nome, tipo, Categoria: alocacao);
+                : new CriarAtivoRequest(ticker, nome, tipo, Categoria: alocacao, Cnpj: cnpj);
             var criado = await servico.CriarAsync(pedido);
             if (criado.Sucesso) MudDialog.Close(DialogResult.Ok(criado.Valor!.Ticker));
             else erro = criado.Erro;

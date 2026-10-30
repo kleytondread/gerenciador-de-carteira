@@ -29,7 +29,8 @@ internal sealed class ConversaoBaseYahoo
     private const int DiasDepoisDoEvento = 30;
     private const decimal ToleranciaProporcao = 0.03m;
 
-    private readonly Dictionary<int, List<EventoCorporativo>> eventosConvertidosPorAtivo;
+    private readonly Dictionary<int, List<EventoCorporativo>> eventosConvertidosPorAtivo = [];
+    private readonly Dictionary<int, List<EventoCorporativo>> eventosNaBaseNovaPorAtivo = [];
 
     /// <summary>Movimentações que são a bonificação em si (não são aporte).</summary>
     public HashSet<int> Bonificacoes { get; } = [];
@@ -42,16 +43,24 @@ internal sealed class ConversaoBaseYahoo
 
     public record AjusteFracao(int AtivoId, DateOnly Data, decimal Quantidade);
 
-    private ConversaoBaseYahoo(Dictionary<int, List<EventoCorporativo>> eventosConvertidos) =>
-        eventosConvertidosPorAtivo = eventosConvertidos;
+    private ConversaoBaseYahoo() { }
 
     /// <summary>
     /// Multiplicador que leva uma quantidade registrada na <paramref name="data"/> para a base do Yahoo:
     /// produto dos eventos convertidos com data ex posterior.
     /// </summary>
-    public decimal Fator(int ativoId, DateOnly data)
+    public decimal Fator(int ativoId, DateOnly data) => Produto(eventosConvertidosPorAtivo, ativoId, data);
+
+    /// <summary>
+    /// Multiplicador que leva a quantidade de fato na <paramref name="data"/> (a da corretora e da B3) para a
+    /// registrada: produto dos eventos com data ex posterior cujas movimentações anteriores já foram lançadas
+    /// na base nova (ex.: o desdobramento da BBAS3 em 2024 — 240 ações na B3 são 480 no app).
+    /// </summary>
+    public decimal FatorRegistro(int ativoId, DateOnly data) => Produto(eventosNaBaseNovaPorAtivo, ativoId, data);
+
+    private static decimal Produto(Dictionary<int, List<EventoCorporativo>> eventosPorAtivo, int ativoId, DateOnly data)
     {
-        if (!eventosConvertidosPorAtivo.TryGetValue(ativoId, out var eventos)) return 1;
+        if (!eventosPorAtivo.TryGetValue(ativoId, out var eventos)) return 1;
         var fator = 1m;
         foreach (var e in eventos)
             if (e.Data > data) fator *= e.Fator;
@@ -60,8 +69,8 @@ internal sealed class ConversaoBaseYahoo
 
     public static ConversaoBaseYahoo Criar(IReadOnlyList<Movimentacao> movimentacoes, IEnumerable<EventoCorporativo> eventos)
     {
-        var convertidos = new Dictionary<int, List<EventoCorporativo>>();
-        var conversao = new ConversaoBaseYahoo(convertidos);
+        var conversao = new ConversaoBaseYahoo();
+        var convertidos = conversao.eventosConvertidosPorAtivo;
 
         // Só eventos do Yahoo: são eles que ajustam as cotações usadas na avaliação
         foreach (var grupo in eventos.Where(e => e.Origem == OrigemDado.YahooFinance).GroupBy(e => e.AtivoId))
@@ -100,8 +109,11 @@ internal sealed class ConversaoBaseYahoo
                     // Bonificação pequena demais para dar uma ação inteira: tudo vira fração vendida
                     conversao.AjustesFracao.Add(new AjusteFracao(grupo.Key, evento.Data, -acoesNovas));
                     Converter(convertidos, evento);
+                    continue;
                 }
-                // Senão: a posição já foi lançada na base nova; nada a converter
+
+                // A posição já foi lançada na base nova: nada a converter para o Yahoo
+                Converter(conversao.eventosNaBaseNovaPorAtivo, evento);
             }
         }
 

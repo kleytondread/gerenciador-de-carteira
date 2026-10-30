@@ -1,0 +1,80 @@
+@* Ficha Bens e Direitos: um item por ativo, com os campos na ordem do programa *@
+
+<div class="wal-painel">
+    <CardPainel Titulo="Bens e Direitos" Subtitulo="@($"{Itens.Count} itens · custo de aquisição com taxas")" Class="wal-s12">
+        <MudText Typo="Typo.body2">
+            Situação = custo de aquisição (preço médio com corretagem e emolumentos × quantidade), nunca o valor de mercado.
+            Localização: <strong>105 – Brasil</strong> em todos. Para itens que já vieram da declaração anterior, confira a situação de 31/12/@(Ano - 1)
+            e atualize a de 31/12/@Ano e a discriminação.
+        </MudText>
+    </CardPainel>
+
+    @foreach (var b in Itens)
+    {
+        <MudPaper Outlined="true" Class="wal-card wal-bem wal-s6">
+            <header class="wal-bem-cabecalho">
+                <span class="wal-bem-codigo">@b.Codigo.Rotulo</span>
+                <span class="wal-forte">@b.Ticker</span>
+                <span class="wal-k wal-nome">@b.Nome</span>
+                @if (!b.CodigoConferido)
+                {
+                    <MudTooltip Text="Código ainda não usado numa declaração sua: confira na lista do programa">
+                        <span class="wal-selo wal-selo-aviso"><MudIcon Icon="@Icons.Material.Outlined.HelpOutline" Size="Size.Small" />conferir código</span>
+                    </MudTooltip>
+                }
+                @if (b.Opcional)
+                {
+                    <MudTooltip Text="Ações e BDRs com custo abaixo de R$ 1.000,00 não são obrigatórios (declarar não tem problema)">
+                        <span class="wal-selo">opcional</span>
+                    </MudTooltip>
+                }
+            </header>
+            <dl class="wal-ficha">
+                <dt>Grupo / Código</dt>
+                <dd>@b.Codigo.Grupo – @b.Codigo.Codigo <span class="wal-k">@b.Codigo.Descricao</span></dd>
+                <dt>CNPJ</dt>
+                <dd>
+                    @if (b.Cnpj is null)
+                    {
+                        <span class="wal-selo wal-selo-erro"><MudIcon Icon="@Icons.Material.Outlined.ErrorOutline" Size="Size.Small" />sem CNPJ</span>
+                    }
+                    else
+                    {
+                        <CampoCopiavel Texto="@b.Cnpj" Rotulo="CNPJ" />
+                    }
+                </dd>
+                @if (b.NegociadoEmBolsa)
+                {
+                    <dt>Negociado em bolsa?</dt>
+                    <dd>Sim · código <CampoCopiavel Texto="@b.Ticker" Rotulo="código de negociação" /></dd>
+                }
+                <dt>Discriminação</dt>
+                <dd><CampoCopiavel Texto="@b.Discriminacao" Rotulo="discriminação" Class="wal-copiavel-bloco" /></dd>
+                <dt>Situação em 31/12/@(Ano - 1)</dt>
+                <dd>
+                    <CampoCopiavel Moeda="b.SituacaoAnterior" Rotulo="situação anterior" Mascarar="Mascarar" />
+                    @if (b.QuantidadeAnterior > 0)
+                    {
+                        <span class="wal-k">@Formatacao.QuantidadeCurta(b.QuantidadeAnterior)</span>
+                    }
+                </dd>
+                <dt>Situação em 31/12/@Ano</dt>
+                <dd>
+                    <CampoCopiavel Moeda="b.SituacaoAtual" Rotulo="situação atual" Mascarar="Mascarar" />
+                    @if (b.QuantidadeAtual > 0)
+                    {
+                        <span class="wal-k">@Formatacao.QuantidadeCurta(b.QuantidadeAtual)</span>
+                    }
+                </dd>
+            </dl>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<BemDireitoIrpf> Itens { get; set; } = [];
+
+    [Parameter] public int Ano { get; set; }
+
+    [Parameter] public bool Mascarar { get; set; }
+}

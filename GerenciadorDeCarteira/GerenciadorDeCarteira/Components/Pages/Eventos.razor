@@ -25,7 +25,7 @@ else
         <CardPagadores Pagadores="painel.Pagadores12Meses" Mascarar="Mascarar" Class="wal-s7" />
         <CardEventosCorporativos Eventos="painel.EventosCorporativos" Class="wal-s5" />
         <CardHistoricoProventos Proventos="painel.Proventos" Ocultos="ocultos" Mascarar="Mascarar" Class="wal-s12"
-                                OnLancar="LancarAsync" OnEditar="EditarAsync" OnExcluir="ExcluirAsync" OnRestaurar="RestaurarAsync" />
+                                OnLancar="LancarAsync" OnImportar="ImportarAsync" OnEditar="EditarAsync" OnExcluir="ExcluirAsync" OnRestaurar="RestaurarAsync" />
     </div>
 }
 
@@ -97,7 +97,7 @@ else
 
     private async Task ExcluirAsync(ProventoRecebidoResponse p)
     {
-        var manual = p.Origem == OrigemDado.Manual;
+        var manual = p.Origem != OrigemDado.YahooFinance;
         var confirmado = await Dialogos.ShowMessageBoxAsync(
             manual ? "Excluir provento?" : "Ocultar provento?",
             manual
@@ -113,6 +113,12 @@ else
             return;
         }
         AposAlterar(manual ? "Provento excluído." : "Provento ocultado.");
+    }
+
+    private async Task ImportarAsync()
+    {
+        if (await DialogImportacaoB3.AbrirAsync(Dialogos) is ResumoImportacaoB3 resumo)
+            AposAlterar(DialogImportacaoB3.Mensagem(resumo));
     }
 
     private async Task RestaurarAsync(int proventoId)

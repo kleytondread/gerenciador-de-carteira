@@ -19,6 +19,9 @@ public class Ativo
     public string? TituloTesouro { get; set; }
     public DateOnly? VencimentoTesouro { get; set; }
 
+    /// <summary>CNPJ do emissor (empresa ou fundo), só os 14 dígitos. Exigido na declaração do IR.</summary>
+    public string? Cnpj { get; set; }
+
     public ICollection<Movimentacao> Movimentacoes { get; set; } = [];
     public ICollection<CotacaoHistorica> CotacoesHistoricas { get; set; } = [];
     public ICollection<Provento> Proventos { get; set; } = [];

@@ -4,5 +4,8 @@ namespace Wal.Domain.Enums;
 public enum OrigemDado
 {
     YahooFinance = 0,
-    Manual = 2
+    Manual = 2,
+    // Provento criado a partir do extrato de Movimentação da B3: tipo, datas e valores pagos são os reais.
+    // Editável como um lançamento manual.
+    ExtratoB3 = 3
 }

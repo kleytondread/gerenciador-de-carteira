@@ -10,6 +10,9 @@ using Wal.ExternalApis;
 using Wal.Jobs;
 using Wal.Services;
 using Wal.Services.Common;
+using Wal.Services.Dtos;
+using Wal.Services.ImportacaoB3;
+using Wal.Services.Irpf;
 using Wal.Services.TesouroDireto;
 
 
@@ -95,6 +98,11 @@ builder.Services.AddScoped<IMovimentacaoService, MovimentacaoService>();
 builder.Services.AddScoped<ICarteiraService, CarteiraService>();
 builder.Services.AddScoped<IAnaliseCarteiraService, AnaliseCarteiraService>();
 builder.Services.AddScoped<IProventoService, ProventoService>();
+builder.Services.AddScoped<IImportacaoB3Service, ImportacaoB3Service>();
+builder.Services.AddScoped<IIrpfService, IrpfService>();
+// Corretora onde ficam os ativos: vai na discriminação e é a fonte pagadora do Tesouro na declaração do IR
+builder.Services.AddSingleton(builder.Configuration.GetSection("Irpf:Corretora").Get<CorretoraIrpf>()
+    ?? throw new InvalidOperationException("Configure Irpf:Corretora (Nome e Cnpj) no appsettings.json."));
 
 // Cotação do momento na tela de Posições: só em memória, compartilhada entre as abas abertas
 builder.Services.AddMemoryCache();

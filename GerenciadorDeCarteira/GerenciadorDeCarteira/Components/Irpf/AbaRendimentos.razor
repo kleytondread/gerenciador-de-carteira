@@ -1,0 +1,126 @@
+@* Fichas de rendimentos (isentos e de tributação exclusiva): uma linha por fonte pagadora, agrupadas por código *@
+
+<div class="wal-painel">
+    @if (Bloqueios > 0)
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true" Class="wal-s12">
+            @Bloqueios @(Bloqueios == 1 ? "provento ainda não conferido" : "proventos ainda não conferidos") pela B3 podem mudar estes valores. Veja a aba Conferência.
+        </MudAlert>
+    }
+    @if (Introducao is not null)
+    {
+        <CardPainel Titulo="@Ficha" Class="wal-s12">@Introducao</CardPainel>
+    }
+    @if (Itens.Count == 0)
+    {
+        <MudPaper Outlined="true" Class="pa-6 wal-s12 wal-vazio">Nada a declarar nesta ficha em @Ano.</MudPaper>
+    }
+    @foreach (var codigo in Itens.GroupBy(i => i.Codigo))
+    {
+        <CardPainel Titulo="@($"Código {codigo.Key.Codigo} — {codigo.Key.Descricao}")"
+                    Subtitulo="@($"total {(Mascarar ? Formatacao.ValorOculto : Formatacao.Moeda(codigo.Sum(i => i.Valor)))}")"
+                    SemEspacamento="true" Class="wal-s12">
+            <div class="wal-rolagem">
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="wal-tabela wal-tabela-clicavel">
+                    <thead>
+                        <tr>
+                            <th>CNPJ da fonte pagadora</th>
+                            <th>Nome da fonte pagadora</th>
+                            <th class="wal-sec">Ativo</th>
+                            <th class="wal-num">Valor</th>
+                            <th class="wal-acoes-col"><span class="wal-oculto-leitor">Detalhe</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in codigo)
+                        {
+                            var aberto = abertos.Contains(r);
+                            <tr @onclick="() => Alternar(r)">
+                                <td @onclick:stopPropagation="true">
+                                    @if (r.Cnpj is not null)
+                                    {
+                                        <CampoCopiavel Texto="@r.Cnpj" Rotulo="CNPJ" />
+                                    }
+                                    else if (codigo.Key == TabelaIrpf.GanhoAcoesIsento)
+                                    {
+                                        <span class="wal-k">não se aplica</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="wal-selo wal-selo-erro">sem CNPJ</span>
+                                    }
+                                </td>
+                                <td @onclick:stopPropagation="true"><CampoCopiavel Texto="@r.NomeFonte.Trim().ToUpper(Formatacao.PtBR)" Rotulo="nome da fonte pagadora" /></td>
+                                <td class="wal-sec wal-forte">@r.Ticker</td>
+                                <td class="wal-num" @onclick:stopPropagation="true">
+                                    @if (r.Calculado)
+                                    {
+                                        <MudTooltip Text="Inclui valor calculado pelo app (sem o crédito da B3): confira no informe">
+                                            <MudIcon Icon="@Icons.Material.Outlined.Calculate" Size="Size.Small" Class="wal-dica" />
+                                        </MudTooltip>
+                                    }
+                                    <CampoCopiavel Moeda="r.Valor" Rotulo="valor" Mascarar="Mascarar" Class="wal-forte" />
+                                </td>
+                                <td class="wal-acoes-col">
+                                    <MudIcon Icon="@(aberto ? Icons.Material.Outlined.ExpandLess : Icons.Material.Outlined.ExpandMore)" Size="Size.Small" Class="wal-chevron" />
+                                </td>
+                            </tr>
+                            @if (aberto)
+                            {
+                                <tr class="wal-linha-detalhe">
+                                    <td colspan="5">
+                                        <table class="wal-composicao">
+                                            <thead><tr><th>Data</th><th>O que é</th><th class="wal-num">Bruto</th><th class="wal-num">Líquido</th></tr></thead>
+                                            <tbody>
+                                                @foreach (var c in r.Composicao)
+                                                {
+                                                    <tr>
+                                                        <td>@c.Data.ToString("dd/MM/yyyy")</td>
+                                                        <td>
+                                                            @c.Descricao
+                                                            @if (c.Calculado)
+                                                            {
+                                                                <MudIcon Icon="@Icons.Material.Outlined.Calculate" Size="Size.Small" Class="wal-dica" title="Calculado pelo app" />
+                                                            }
+                                                        </td>
+                                                        <td class="wal-num">@Formatacao.Moeda(c.ValorBruto, Mascarar)</td>
+                                                        <td class="wal-num">@Formatacao.Moeda(c.ValorLiquido, Mascarar)</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </div>
+            @if (codigo.First().Observacao is string obs)
+            {
+                <div class="wal-card-nota"><MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" /> @obs</div>
+            }
+        </CardPainel>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<RendimentoIrpf> Itens { get; set; } = [];
+
+    [Parameter, EditorRequired] public string Ficha { get; set; } = "";
+
+    [Parameter] public int Ano { get; set; }
+
+    [Parameter] public int Bloqueios { get; set; }
+
+    [Parameter] public RenderFragment? Introducao { get; set; }
+
+    [Parameter] public bool Mascarar { get; set; }
+
+    private readonly HashSet<RendimentoIrpf> abertos = [];
+
+    private void Alternar(RendimentoIrpf r)
+    {
+        if (!abertos.Remove(r)) abertos.Add(r);
+    }
+}

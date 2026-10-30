@@ -28,7 +28,7 @@
             </div>
             <MudNumericField T="decimal" @bind-Value="valorPorAcao" Label="Valor por ação (bruto)" Variant="Variant.Outlined"
                              Disabled="Importado" Min="0" Format="N4" Culture="@Formatacao.PtBR" Adornment="Adornment.Start" AdornmentText="R$"
-                             HelperText="@(Importado ? "Vem da fonte" : "JCP antes dos 15% de IR")" />
+                             HelperText="@(Importado ? "Vem da fonte" : "JCP antes do IR (15% até 2025; 17,5% desde 2026)")" />
             @if (erro is not null)
             {
                 <MudAlert Severity="Severity.Error" Dense="true">@erro</MudAlert>

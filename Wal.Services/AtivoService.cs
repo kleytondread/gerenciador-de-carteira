@@ -35,7 +35,7 @@ public partial class AtivoService(
                 $"Ticker '{request.Ticker}' não segue o formato B3 esperado (4 caracteres iniciando por letra + 1 ou 2 dígitos, ex: PETR4, HGLG11, B5P211).",
                 TipoErroOperacao.Validacao);
 
-        var erroCampos = ValidarNomeETipo(request.Nome, request.Tipo);
+        var erroCampos = ValidarNomeETipo(request.Nome, request.Tipo) ?? ValidarCnpj(request.Cnpj);
         if (erroCampos is not null)
             return ResultadoOperacao<AtivoResponse>.Falha(erroCampos, TipoErroOperacao.Validacao);
 
@@ -50,6 +50,7 @@ public partial class AtivoService(
             Nome = request.Nome.Trim(),
             Tipo = request.Tipo,
             Categoria = request.Categoria ?? CategoriasAlocacao.Padrao(request.Tipo),
+            Cnpj = Cnpj.Normalizar(request.Cnpj),
             EstaAtivo = true,
             DataCadastro = DateTime.UtcNow
         };
@@ -133,7 +134,7 @@ public partial class AtivoService(
 
         return await query
             .OrderBy(a => a.Ticker)
-            .Select(a => new AtivoResponse(a.Id, a.Ticker, a.Nome, a.Tipo, a.EstaAtivo, a.DataCadastro, a.Categoria))
+            .Select(a => new AtivoResponse(a.Id, a.Ticker, a.Nome, a.Tipo, a.EstaAtivo, a.DataCadastro, a.Categoria, a.Cnpj))
             .ToListAsync();
     }
 
@@ -143,7 +144,7 @@ public partial class AtivoService(
         if (ativo is null)
             return ResultadoOperacao<AtivoResponse>.Falha("Ativo não encontrado.", TipoErroOperacao.NaoEncontrado);
 
-        var erroCampos = ValidarNomeETipo(request.Nome, request.Tipo);
+        var erroCampos = ValidarNomeETipo(request.Nome, request.Tipo) ?? ValidarCnpj(request.Cnpj);
         if (erroCampos is not null)
             return ResultadoOperacao<AtivoResponse>.Falha(erroCampos, TipoErroOperacao.Validacao);
 
@@ -159,6 +160,7 @@ public partial class AtivoService(
         // Nula = mantém a atual. Tesouro é sempre renda fixa.
         if (ativo.Tipo == TipoAtivo.Tesouro) ativo.Categoria = CategoriaAlocacao.RendaFixa;
         else if (request.Categoria is CategoriaAlocacao categoria) ativo.Categoria = categoria;
+        if (request.Cnpj is not null) ativo.Cnpj = Cnpj.Normalizar(request.Cnpj);
         await db.SaveChangesAsync();
 
         return ResultadoOperacao<AtivoResponse>.Ok(ParaResponse(ativo));
@@ -241,7 +243,7 @@ public partial class AtivoService(
                 : SaudeCotacoes.EmDia;
             return new AtivoRastreadoResponse(
                 a.Id, a.Ticker, a.Nome, a.Tipo, a.EstaAtivo, situacao, temTransacao ? Math.Max(quantidade, 0) : 0,
-                c?.Primeira, c?.Ultima, proventos.GetValueOrDefault(a.Id), saude, a.Categoria);
+                c?.Primeira, c?.Ultima, proventos.GetValueOrDefault(a.Id), saude, a.Categoria, a.Cnpj);
         }).ToList();
     }
 
@@ -306,10 +308,16 @@ public partial class AtivoService(
         return null;
     }
 
+    // Vazio é aceito (apaga); preenchido tem de ter 14 dígitos e dígitos verificadores corretos
+    private static string? ValidarCnpj(string? cnpj) =>
+        Cnpj.Normalizar(cnpj) is string digitos && !Cnpj.Valido(digitos)
+            ? $"CNPJ {cnpj!.Trim()} inválido: confira os 14 dígitos (os verificadores não conferem)."
+            : null;
+
     // Expressão (não método): o EF traduz para SQL e busca só as colunas usadas
     private static readonly Expression<Func<CotacaoHistorica, CotacaoResponse>> ParaCotacao =
         c => new CotacaoResponse(c.Data, c.Abertura, c.Maxima, c.Minima, c.Fechamento, c.Volume);
 
     private static AtivoResponse ParaResponse(Ativo ativo) =>
-        new(ativo.Id, ativo.Ticker, ativo.Nome, ativo.Tipo, ativo.EstaAtivo, ativo.DataCadastro, ativo.Categoria);
+        new(ativo.Id, ativo.Ticker, ativo.Nome, ativo.Tipo, ativo.EstaAtivo, ativo.DataCadastro, ativo.Categoria, ativo.Cnpj);
 }

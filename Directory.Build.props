@@ -1,7 +1,7 @@
 <Project>
   <!-- Versão única do app (versão web e versão Windows). O publicar.ps1 lê daqui. -->
   <PropertyGroup>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Company>Gerenciador de Carteira</Company>
   </PropertyGroup>
 </Project>

@@ -12,7 +12,7 @@
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="36" CornerRadius="0" GlassFrameThickness="0" ResizeBorderThickness="6" UseAeroCaptionButtons="False" />
     </WindowChrome.WindowChrome>
-    <Grid x:Name="Raiz">
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="36" />
             <RowDefinition Height="*" />

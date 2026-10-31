@@ -80,6 +80,7 @@ public static class ServicosCarteira
         services.AddScoped<IDadosMercadoService, DadosMercadoService>();
         services.AddScoped<IAtivoJobScheduler, AtivoJobScheduler>();
         services.AddScoped<AtivoSyncJob>();
+        services.AddScoped<AtualizacaoCompletaJob>();
         services.AddScoped<IPosicaoService, PosicaoService>();
         services.AddScoped<IAtivoService, AtivoService>();
         services.AddScoped<IMovimentacaoService, MovimentacaoService>();
@@ -100,11 +101,13 @@ public static class ServicosCarteira
         // usa o mesmo arquivo de banco da aplicação (storage roda em tabelas próprias, prefixo Hangfire).
         // Atenção: UseSQLiteStorage espera o caminho puro do arquivo, não uma connection string
         // no formato "Data Source=..." do EF Core.
-        services.AddHangfire(config => config
+        services.AddSingleton<AtualizacoesDados>();
+        services.AddHangfire((provider, config) => config
             .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
             .UseSimpleAssemblyNameTypeSerializer()
             .UseRecommendedSerializerSettings()
-            .UseSQLiteStorage(conexao.DataSource));
+            .UseSQLiteStorage(conexao.DataSource)
+            .UseFilter(new AvisarTelasAoConcluir(provider.GetRequiredService<AtualizacoesDados>())));
 
         services.AddHangfireServer();
 

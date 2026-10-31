@@ -19,28 +19,32 @@ public class CotacaoAoVivoService(
 
     // Última busca de um ticker. Fica em memória até o fim do dia: entre o fim do pregão e o job das 20h
     // a tela continua com o preço de hoje em vez de voltar para o fechamento de ontem.
-    private sealed record Busca(YahooCotacaoAtual? Cotacao, DateTimeOffset Em);
+    // Em: última tentativa (controla o intervalo); VerificadaEm: última que o Yahoo respondeu.
+    private sealed record Busca(YahooCotacaoAtual? Cotacao, DateTimeOffset Em, DateTimeOffset? VerificadaEm);
 
-    public async Task<IReadOnlyDictionary<string, YahooCotacaoAtual>> ObterAsync(IEnumerable<string> tickers)
+    public async Task<CotacoesAoVivo> ObterAsync(IEnumerable<string> tickers, bool buscarAgora = false)
     {
         var agora = relogio.GetUtcNow();
-        var hoje = Pregao.Dia(agora);
         var pregaoAberto = Pregao.Aberto(agora);
         var resultado = new ConcurrentDictionary<string, YahooCotacaoAtual>();
+        var verificadas = new ConcurrentBag<DateTimeOffset>();
 
         await Parallel.ForEachAsync(tickers.Distinct(), new ParallelOptions { MaxDegreeOfParallelism = ChamadasSimultaneas },
             async (ticker, _) =>
             {
                 var busca = cache.Get<Busca>(Chave(ticker));
-                if (pregaoAberto && (busca is null || agora - busca.Em >= Intervalo))
+                if (buscarAgora || (pregaoAberto && (busca is null || agora - busca.Em >= Intervalo)))
                     busca = await BuscarAsync(ticker, busca, agora);
 
-                // Feriado: o Yahoo devolve o último pregão, que o banco já tem
-                if (busca?.Cotacao is { } cotacao && Pregao.Dia(cotacao.Horario) == hoje)
+                if (busca?.VerificadaEm is { } verificada) verificadas.Add(verificada);
+
+                // Fora do pregão (ou em feriado) o Yahoo devolve o último pregão; quem usa compara com o fechamento
+                // gravado no banco e só fica com o preço se ele for mais novo (ex.: sábado, antes do job ter sexta)
+                if (busca?.Cotacao is { } cotacao)
                     resultado[ticker] = cotacao;
             });
 
-        return resultado;
+        return new CotacoesAoVivo(resultado, verificadas.IsEmpty ? null : verificadas.Max());
     }
 
     private async Task<Busca> BuscarAsync(string ticker, Busca? anterior, DateTimeOffset agora)
@@ -57,7 +61,9 @@ public class CotacaoAoVivoService(
             cotacao = null;
         }
 
-        var busca = new Busca(cotacao ?? anterior?.Cotacao, agora);
+        var busca = cotacao is null
+            ? new Busca(anterior?.Cotacao, agora, anterior?.VerificadaEm)
+            : new Busca(cotacao, agora, agora);
         cache.Set(Chave(ticker), busca, TimeSpan.FromDays(1));
         return busca;
     }

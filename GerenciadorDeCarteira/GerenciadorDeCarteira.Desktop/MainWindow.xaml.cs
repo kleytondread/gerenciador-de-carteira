@@ -12,6 +12,9 @@ public partial class MainWindow : Window
     public MainWindow(IServiceProvider services)
     {
         InitializeComponent();
+        // 1600x900 de início; numa tela menor (notebook 1366x768), cabe na área livre do monitor principal
+        Width = Math.Min(Width, SystemParameters.WorkArea.Width);
+        Height = Math.Min(Height, SystemParameters.WorkArea.Height);
         BlazorWebView.Services = services;
         StateChanged += (_, _) => AoMudarEstado();
         SourceInitialized += (_, _) => HwndSource.FromHwnd(new WindowInteropHelper(this).Handle).AddHook(Mensagens);

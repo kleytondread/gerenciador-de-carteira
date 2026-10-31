@@ -124,6 +124,15 @@ html, body {
     background: #fab219;
 }
 
+/* Botão de atualizar enquanto o job roda */
+.wal-girando .mud-icon-root {
+    animation: wal-girar 1s linear infinite;
+}
+
+@keyframes wal-girar {
+    to { transform: rotate(-360deg); }
+}
+
 .wal-drawer {
     border-right: 1px solid var(--mud-palette-lines-default);
 }

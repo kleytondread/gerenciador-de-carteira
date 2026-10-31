@@ -358,8 +358,9 @@
 
     private void SincronizarTudo()
     {
-        Jobs.EnfileirarSincronizacaoGeral();
-        Snackbar.Add("Sincronização iniciada em segundo plano. Recarregue a página em alguns minutos.", Severity.Normal);
+        Snackbar.Add(Jobs.EnfileirarSincronizacaoGeral()
+            ? "Sincronização iniciada em segundo plano. As telas se atualizam sozinhas ao terminar."
+            : "Já há uma atualização em andamento.", Severity.Normal);
     }
 
     private void SincronizarIndices()

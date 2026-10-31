@@ -314,8 +314,10 @@ public class AnaliseCarteiraServiceTests : SqliteInMemoryTestBase
         await CotacoesAsync(itsa, (D(1, 2), 10), (D(3, 2), 12));
         await CotacoesAsync(wege, (D(1, 2), 20), (D(3, 2), 20));
         var cotacao = AoVivo(13, 12, D(3, 3));
+        var verificadasEm = cotacao.Horario.AddMinutes(5);
+        var aoVivo = Fixtures.CotacoesAoVivoMock(new() { ["ITSA4"] = cotacao }, verificadasEm);
 
-        var painel = await Criar(Fixtures.CotacoesAoVivo(new() { ["ITSA4"] = cotacao })).ObterPainelPosicoesAsync();
+        var painel = await Criar(aoVivo.Object).ObterPainelPosicoesAsync(buscarCotacoesAgora: true);
 
         var p = painel.Abertas.Single(a => a.Ticker == "ITSA4");
         Assert.Equal(13m, p.Cotacao);
@@ -327,7 +329,8 @@ public class AnaliseCarteiraServiceTests : SqliteInMemoryTestBase
         Assert.Equal(30m, p.ResultadoTotal);
         Assert.Equal(0.3m, p.ResultadoTotalPercentual);
         Assert.Equal([12m, 13m], painel.Tendencia30Dias[itsa.Id]);
-        Assert.Equal(cotacao.Horario, painel.CotacoesAoVivoEm);
+        Assert.Equal(verificadasEm, painel.CotacoesVerificadasEm);
+        aoVivo.Verify(s => s.ObterAsync(It.IsAny<IEnumerable<string>>(), true), Times.Once);
         Assert.Equal(20m, painel.Abertas.Single(a => a.Ticker == "WEGE3").Cotacao);
     }
 
@@ -348,7 +351,6 @@ public class AnaliseCarteiraServiceTests : SqliteInMemoryTestBase
 
         Assert.Equal(12m, painel.Abertas.Single(a => a.Ticker == "ITSA4").Cotacao);
         Assert.Equal(3100m, painel.Abertas.Single(a => a.Ticker == "IPCA2035").Cotacao);
-        Assert.Null(painel.CotacoesAoVivoEm);
     }
 
     [Fact]

@@ -11,8 +11,9 @@ public static class Formatacao
 
     public static string Moeda(decimal valor) => valor.ToString("C2", PtBR);
 
-    /// <summary>Hora no horário de São Paulo (ex.: 14:32).</summary>
-    public static string Hora(DateTimeOffset momento) => TimeZoneInfo.ConvertTime(momento, Pregao.Fuso).ToString("HH:mm", PtBR);
+    /// <summary>Data e hora no horário de São Paulo (ex.: 31/10/26 às 14:32).</summary>
+    public static string DataHora(DateTimeOffset momento) =>
+        TimeZoneInfo.ConvertTime(momento, Pregao.Fuso).ToString("dd/MM/yy 'às' HH:mm", PtBR);
 
     public static string Preco(decimal valor) => valor.ToString("C4", PtBR);
 

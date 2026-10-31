@@ -46,11 +46,11 @@ public class AnaliseCarteiraService(
             MontarPosicoes(motor, await carteira.ObterPosicoesAsync()));
     }
 
-    public async Task<PainelPosicoesResponse> ObterPainelPosicoesAsync()
+    public async Task<PainelPosicoesResponse> ObterPainelPosicoesAsync(bool buscarCotacoesAgora = false)
     {
         var motor = await MotorCarteira.CalcularAsync(db);
         var registradas = await carteira.ObterPosicoesAsync();
-        var aoVivo = await CotacoesAoVivoAsync(registradas);
+        var (aoVivo, verificadasEm) = await CotacoesAoVivoAsync(registradas, buscarCotacoesAgora);
         var abertas = MontarPosicoes(motor, registradas, aoVivo);
         var ativos = await db.Ativos.AsNoTracking().ToDictionaryAsync(a => a.Id);
         var encerradas = Encerradas(motor, registradas, ativos);
@@ -66,19 +66,20 @@ public class AnaliseCarteiraService(
         foreach (var (ativoId, cotacao) in aoVivo)
             tendencia.GetValueOrDefault(ativoId)?.Add(cotacao.Preco);
 
-        return new PainelPosicoesResponse(abertas, encerradas, tendencia,
-            aoVivo.Count > 0 ? aoVivo.Values.Max(c => c.Horario) : null);
+        return new PainelPosicoesResponse(abertas, encerradas, tendencia, verificadasEm);
     }
 
     // Preço do momento das posições abertas, só quando é de um pregão mais novo que o último fechamento gravado
     // (depois do job das 20h o banco já tem o dia). Tesouro Direto não tem cotação no Yahoo.
-    private async Task<Dictionary<int, YahooCotacaoAtual>> CotacoesAoVivoAsync(List<PosicaoAtivoResponse> posicoes)
+    private async Task<(Dictionary<int, YahooCotacaoAtual> PorAtivo, DateTimeOffset? VerificadasEm)> CotacoesAoVivoAsync(
+        List<PosicaoAtivoResponse> posicoes, bool buscarAgora)
     {
         var candidatas = posicoes.Where(p => p.Tipo != TipoAtivo.Tesouro && p.DataCotacao.HasValue).ToList();
-        var cotacoes = await cotacoesAoVivo.ObterAsync(candidatas.Select(p => p.Ticker));
-        return candidatas
+        var (cotacoes, verificadasEm) = await cotacoesAoVivo.ObterAsync(candidatas.Select(p => p.Ticker), buscarAgora);
+        var porAtivo = candidatas
             .Where(p => cotacoes.TryGetValue(p.Ticker, out var c) && Pregao.Dia(c.Horario) > p.DataCotacao)
             .ToDictionary(p => p.AtivoId, p => cotacoes[p.Ticker]);
+        return (porAtivo, verificadasEm);
     }
 
     public async Task<DetalheAtivoResponse?> ObterDetalheAtivoAsync(int ativoId)

@@ -40,6 +40,39 @@ public class YahooFinanceClientTests
         Assert.Null(await cliente.ObterCotacaoAtualAsync("XPTO3"));
     }
 
+    // Caso real (30/10/2026): o último pregão veio com abertura, máxima, mínima e volume, mas fechamento nulo
+    private static string GraficoComUltimoFechamentoNulo(long horarioMeta) => $$$"""
+        {"chart":{"result":[{"meta":{"symbol":"BBAS3.SA","regularMarketPrice":16.47,"regularMarketTime":{{{horarioMeta}}}},
+         "timestamp":[1793278800,1793365200],
+         "indicators":{"quote":[{"open":[16.86,16.36],"high":[16.94,16.75],"low":[16.34,16.13],
+           "close":[16.46,null],"volume":[70352700,61272900]}]}}],"error":null}}
+        """;
+
+    [Fact]
+    public async Task ObterDadosAsync_UltimoFechamentoNulo_UsaPrecoDoMetaDoMesmoDia()
+    {
+        var (cliente, _) = Criar(GraficoComUltimoFechamentoNulo(horarioMeta: 1793390700)); // 30/10 20:05 UTC
+
+        var dados = await cliente.ObterDadosAsync("BBAS3", 0);
+
+        Assert.Equal(2, dados.HistoricalDataPrice.Count);
+        var ultimo = dados.HistoricalDataPrice[^1];
+        Assert.Equal(1793365200, ultimo.Date);
+        Assert.Equal(16.47m, ultimo.Close);
+        Assert.Equal(16.36m, ultimo.Open);
+        Assert.Equal(61272900, ultimo.Volume);
+    }
+
+    [Fact]
+    public async Task ObterDadosAsync_UltimoFechamentoNulo_MetaDeOutroDia_PulaABarra()
+    {
+        var (cliente, _) = Criar(GraficoComUltimoFechamentoNulo(horarioMeta: 1793304300)); // 29/10 20:05 UTC
+
+        var dados = await cliente.ObterDadosAsync("BBAS3", 0);
+
+        Assert.Equal(1793278800, Assert.Single(dados.HistoricalDataPrice).Date);
+    }
+
     [Fact]
     public async Task ObterCotacaoAtualAsync_SemPreco_DevolveNulo()
     {

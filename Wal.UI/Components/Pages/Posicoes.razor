@@ -2,6 +2,7 @@
 @inherits PaginaCarteira
 @inject NavigationManager Nav
 @inject TimeProvider Relogio
+@inject ISnackbar Snackbar
 @using Wal.Services.Common
 
 <PageTitle>Posições - Gestor de Carteira B3</PageTitle>
@@ -23,9 +24,17 @@ else
 {
     <CardPainel Titulo="@(EmCarteira ? "Em carteira" : "Encerradas")" SemEspacamento="true">
         <Acoes>
-            @if (EmCarteira && painel.CotacoesAoVivoEm is DateTimeOffset aoVivoEm)
+            @if (EmCarteira)
             {
-                <MudText Typo="Typo.caption" Class="wal-k" title="Preço do Yahoo Finance, com atraso de cerca de 15 min">Cotações de @Formatacao.Hora(aoVivoEm)</MudText>
+                <MudTooltip Text="Atualizar cotações (Yahoo Finance, com atraso de cerca de 15 min)">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Sync" Size="Size.Small" aria-label="Atualizar cotações"
+                                   Class="@(buscandoCotacoes ? "wal-girando" : "")" Disabled="buscandoCotacoes"
+                                   OnClick="AtualizarCotacoesAsync" />
+                </MudTooltip>
+                @if (painel.CotacoesVerificadasEm is DateTimeOffset verificadasEm)
+                {
+                    <MudText Typo="Typo.caption" Class="wal-k">Atualizado @Formatacao.DataHora(verificadasEm)</MudText>
+                }
             }
             <MudToggleGroup T="string" @bind-Value="aba" @bind-Value:after="AoTrocarAba" Size="Size.Small" Outlined="true" Delimiters="true"
                             Color="Color.Primary" aria-label="Situação">
@@ -201,7 +210,26 @@ else
         painel!.Encerradas.Where(e => Passa(e.Ticker, e.Nome, e.Tipo)).ToList();
 
     protected override async Task CarregarAsync() =>
-        painel = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterPainelPosicoesAsync();
+        painel = await ScopedServices.GetRequiredService<IAnaliseCarteiraService>().ObterPainelPosicoesAsync(buscandoCotacoes);
+
+    // Botão "Atualizar cotações": busca no Yahoo agora, em qualquer horário, e redesenha a tabela com os preços novos
+    private bool buscandoCotacoes;
+
+    private async Task AtualizarCotacoesAsync()
+    {
+        var antes = painel?.CotacoesVerificadasEm;
+        buscandoCotacoes = true;
+        try
+        {
+            await RecarregarAsync();
+        }
+        finally
+        {
+            buscandoCotacoes = false;
+        }
+        if (painel?.CotacoesVerificadasEm is null || painel.CotacoesVerificadasEm == antes)
+            Snackbar.Add("O Yahoo Finance não respondeu; a tabela segue com as últimas cotações.", Severity.Warning);
+    }
 
     // ── Cotações do momento ──────────────────────────────────────────────
 

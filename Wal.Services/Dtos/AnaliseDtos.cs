@@ -44,12 +44,12 @@ public record DashboardResponse(
     List<PosicaoDetalhadaResponse> Posicoes);
 
 /// <summary>Tela de Posições: abertas, encerradas e os fechamentos dos últimos 30 dias de cada aberta.</summary>
-/// <param name="CotacoesAoVivoEm">Horário do preço ao vivo mais recente; nulo quando a tela usa só o banco.</param>
+/// <param name="CotacoesVerificadasEm">Última busca das cotações do momento que deu certo; nula se nenhuma ainda.</param>
 public record PainelPosicoesResponse(
     List<PosicaoDetalhadaResponse> Abertas,
     List<PosicaoEncerradaResponse> Encerradas,
     Dictionary<int, List<decimal>> Tendencia30Dias,
-    DateTimeOffset? CotacoesAoVivoEm);
+    DateTimeOffset? CotacoesVerificadasEm);
 
 /// <summary>Último pregão do ativo e a faixa de 52 semanas (mínima e máxima dos pregões).</summary>
 public record PregaoResponse(

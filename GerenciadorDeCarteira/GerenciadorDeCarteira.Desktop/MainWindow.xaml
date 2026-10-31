@@ -4,7 +4,7 @@
         xmlns:blazor="clr-namespace:Microsoft.AspNetCore.Components.WebView.Wpf;assembly=Microsoft.AspNetCore.Components.WebView.Wpf"
         xmlns:web="clr-namespace:Microsoft.AspNetCore.Components.Web;assembly=Microsoft.AspNetCore.Components.Web"
         xmlns:telas="clr-namespace:GerenciadorDeCarteira.Components;assembly=Wal.UI"
-        Title="Gerenciador de Carteira" Height="820" Width="1320" MinHeight="520" MinWidth="820"
+        Title="Gerenciador de Carteira" Height="900" Width="1600" MinHeight="520" MinWidth="820"
         WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize" Icon="app.ico"
         Background="{DynamicResource TitleBarBackgroundBrush}">
     <!-- Barra de título própria (como no jrstudio), com as cores do app. O WindowChrome mantém o comportamento

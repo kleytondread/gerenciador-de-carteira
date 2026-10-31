@@ -52,7 +52,7 @@ public class CotacaoAoVivoServiceTests
         relogio.Agora = Quarta(11, 10);
         await sut.ObterAsync(["PETR4"]);
         yahoo.Verify(y => y.ObterCotacaoAtualAsync("PETR4"), Times.Exactly(2));
-        Assert.Equal(38.5m, cotacoes["PETR4"].Preco);
+        Assert.Equal(38.5m, cotacoes.Cotacoes["PETR4"].Preco);
     }
 
     [Fact]
@@ -60,25 +60,25 @@ public class CotacaoAoVivoServiceTests
     {
         YahooResponde(Quarta(17, 50));
         relogio.Agora = Quarta(19);
-        Assert.Empty(await sut.ObterAsync(["PETR4"]));
+        Assert.Empty((await sut.ObterAsync(["PETR4"])).Cotacoes);
 
         relogio.Agora = Quarta(17, 55);
         await sut.ObterAsync(["PETR4"]);
         relogio.Agora = Quarta(19);
         var cotacoes = await sut.ObterAsync(["PETR4"]);
 
-        Assert.Equal(38.5m, cotacoes["PETR4"].Preco);
+        Assert.Equal(38.5m, cotacoes.Cotacoes["PETR4"].Preco);
         yahoo.Verify(y => y.ObterCotacaoAtualAsync("PETR4"), Times.Once);
     }
 
     [Fact]
-    public async Task ObterAsync_CotacaoDeOutroDia_EhDescartada()
+    public async Task ObterAsync_CotacaoDeOutroDia_DevolveParaOPainelComparar()
     {
-        // Feriado: o Yahoo devolve o último pregão
+        // Feriado ou fim de semana: o Yahoo devolve o último pregão; o painel só usa se o banco ainda não tiver o dia
         YahooResponde(Quarta(17).AddDays(-1));
         relogio.Agora = Quarta(11);
 
-        Assert.Empty(await sut.ObterAsync(["PETR4"]));
+        Assert.Equal(Quarta(17).AddDays(-1), (await sut.ObterAsync(["PETR4"])).Cotacoes["PETR4"].Horario);
     }
 
     [Fact]
@@ -87,6 +87,44 @@ public class CotacaoAoVivoServiceTests
         yahoo.Setup(y => y.ObterCotacaoAtualAsync("PETR4")).ThrowsAsync(new HttpRequestException("fora do ar"));
         relogio.Agora = Quarta(11);
 
-        Assert.Empty(await sut.ObterAsync(["PETR4"]));
+        Assert.Empty((await sut.ObterAsync(["PETR4"])).Cotacoes);
+    }
+
+    [Fact]
+    public async Task ObterAsync_BuscarAgora_ChamaOYahooForaDoPregaoEAntesDoIntervalo()
+    {
+        YahooResponde(Quarta(17, 55));
+
+        relogio.Agora = Quarta(17, 58);
+        await sut.ObterAsync(["PETR4"]);
+        relogio.Agora = Quarta(19);
+        var cotacoes = await sut.ObterAsync(["PETR4"], buscarAgora: true);
+
+        yahoo.Verify(y => y.ObterCotacaoAtualAsync("PETR4"), Times.Exactly(2));
+        Assert.Equal(38.5m, cotacoes.Cotacoes["PETR4"].Preco);
+        Assert.Equal(Quarta(19), cotacoes.VerificadasEm);
+    }
+
+    [Fact]
+    public async Task ObterAsync_FalhaDoYahoo_MantemOHorarioDaUltimaBuscaQueDeuCerto()
+    {
+        YahooResponde(Quarta(11));
+        relogio.Agora = Quarta(11);
+        await sut.ObterAsync(["PETR4"]);
+
+        yahoo.Setup(y => y.ObterCotacaoAtualAsync("PETR4")).ThrowsAsync(new HttpRequestException("fora do ar"));
+        relogio.Agora = Quarta(11, 30);
+        var cotacoes = await sut.ObterAsync(["PETR4"], buscarAgora: true);
+
+        Assert.Equal(Quarta(11), cotacoes.VerificadasEm);
+        Assert.Equal(38.5m, cotacoes.Cotacoes["PETR4"].Preco);
+    }
+
+    [Fact]
+    public async Task ObterAsync_SemNenhumaBusca_VerificadasEmNulo()
+    {
+        relogio.Agora = Quarta(19);
+
+        Assert.Null((await sut.ObterAsync(["PETR4"])).VerificadasEm);
     }
 }

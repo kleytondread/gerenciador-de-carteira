@@ -8,8 +8,11 @@ public interface IAtivoJobScheduler
     /// </summary>
     string EnfileirarCargaHistoricaInicial(int ativoId);
 
-    /// <summary>Roda agora a sincronização diária: ativos rastreados (Yahoo), títulos do Tesouro e índices.</summary>
-    void EnfileirarSincronizacaoGeral();
+    /// <summary>
+    /// Roda agora a sincronização diária (ativos rastreados, títulos do Tesouro e índices) num job só.
+    /// Falso se já há uma atualização rodando (<see cref="Common.AtualizacoesDados.Atualizando"/>).
+    /// </summary>
+    bool EnfileirarSincronizacaoGeral();
 
     /// <summary>Roda agora só a atualização dos índices de referência (CDI, IPCA, IBOV...).</summary>
     void EnfileirarSincronizacaoIndices();

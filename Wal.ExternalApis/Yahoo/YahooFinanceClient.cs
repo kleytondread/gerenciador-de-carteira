@@ -42,7 +42,7 @@ public class YahooFinanceClient(HttpClient http, ILogger<YahooFinanceClient> log
         for (int i = 0; i < result.Timestamp.Count; i++)
         {
             // Pula entradas sem preço de fechamento (dias sem negociação)
-            if (quote.Close?.ElementAtOrDefault(i) is not { } close) continue;
+            if ((quote.Close?.ElementAtOrDefault(i) ?? FechamentoDoMeta(result, i)) is not { } close) continue;
 
             precos.Add(new YahooHistoricalPrice
             {
@@ -83,6 +83,21 @@ public class YahooFinanceClient(HttpClient http, ILogger<YahooFinanceClient> log
             Dividends          = dividendos,
             Splits             = eventos
         };
+    }
+
+    /// <summary>
+    /// O Yahoo às vezes devolve o último pregão com o fechamento vazio na série diária (abertura, máxima, mínima e
+    /// volume vêm preenchidos), mesmo dias depois. O preço do pregão está no meta; vale só para a última barra e se
+    /// o meta for do mesmo dia.
+    /// </summary>
+    private static decimal? FechamentoDoMeta(YahooChartResult result, int i)
+    {
+        if (i != result.Timestamp!.Count - 1
+            || result.Meta is not { RegularMarketPrice: decimal preco and > 0, RegularMarketTime: long horario })
+            return null;
+
+        static DateOnly Dia(long unix) => DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeSeconds(unix).UtcDateTime);
+        return Dia(horario) == Dia(result.Timestamp[i]) ? preco : null;
     }
 
     /// <summary>Chamada comum ao endpoint chart. Nulo quando o Yahoo responde com erro ou sem resultado.</summary>

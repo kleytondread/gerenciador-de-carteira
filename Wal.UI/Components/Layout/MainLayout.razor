@@ -5,6 +5,8 @@
 @inject IServiceScopeFactory ScopeFactory
 @inject PainelTransacaoEstado PainelEstado
 @inject IPreferenciasIniciais FontePreferencias
+@inject AtualizacoesDados Atualizacoes
+@inject ISnackbar Snackbar
 
 <MudThemeProvider Theme="TemaWal.Tema" IsDarkMode="Preferencias.TemaEscuro" />
 <MudPopoverProvider />
@@ -58,6 +60,11 @@
                 <span class="wal-sync">
                     <span class="wal-dot @(CotacoesEmDia(ultima) ? "" : "wal-dot-old")" aria-hidden="true"></span>
                     Cotações de @ultima.ToString("dd/MM/yyyy")
+                    <MudTooltip Text="@(Atualizacoes.Atualizando ? "Atualização em andamento…" : "Atualizar tudo (cotações, Tesouro e índices)")">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Sync" Size="Size.Small" aria-label="Atualizar tudo"
+                                       Class="@(Atualizacoes.Atualizando ? "wal-girando" : "")" Disabled="Atualizacoes.Atualizando"
+                                       OnClick="AtualizarTudo" />
+                    </MudTooltip>
                 </span>
             }
             <MudTooltip Text="@(Preferencias.OcultarValores ? "Mostrar valores" : "Ocultar valores")">
@@ -117,6 +124,7 @@
         Iniciais ??= FontePreferencias.Ler();
         if (Iniciais is not null) Preferencias.DefinirIniciais(Iniciais);
         Preferencias.Mudou += AoMudar;
+        Atualizacoes.EstadoMudou += AoMudar; // ícone girando enquanto algum job roda
         Notificacoes.CarteiraAlterada += AoAlterarCarteira;
         await CarregarCabecalhoAsync();
     }
@@ -138,8 +146,22 @@
     private void AoAlterarCarteira() => InvokeAsync(async () =>
     {
         await CarregarCabecalhoAsync();
+        if (atualizandoTudo && !Atualizacoes.Atualizando)
+        {
+            atualizandoTudo = false;
+            Snackbar.Add("Cotações, Tesouro e índices atualizados.", Severity.Success);
+        }
         StateHasChanged();
     });
+
+    // Se o clique veio desta janela, avisa quando terminar
+    private bool atualizandoTudo;
+
+    private void AtualizarTudo()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        atualizandoTudo = scope.ServiceProvider.GetRequiredService<IAtivoJobScheduler>().EnfileirarSincronizacaoGeral();
+    }
 
     private string Moeda(decimal valor) => Preferencias.Mascarar ? ValorOculto : Formatacao.Moeda(valor);
 
@@ -152,6 +174,7 @@
     public void Dispose()
     {
         Preferencias.Mudou -= AoMudar;
+        Atualizacoes.EstadoMudou -= AoMudar;
         Notificacoes.CarteiraAlterada -= AoAlterarCarteira;
     }
 }

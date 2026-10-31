@@ -8,8 +8,9 @@ public interface IAnaliseCarteiraService
     /// <summary>Série, resumo, resultado mensal, drawdown, contribuição e proventos de 12 meses e posições — um cálculo só. Nulo sem movimentações.</summary>
     Task<DashboardResponse?> ObterDashboardAsync();
 
-    /// <summary>Posições abertas e encerradas e a tendência de 30 dias das abertas — um cálculo só.</summary>
-    Task<PainelPosicoesResponse> ObterPainelPosicoesAsync();
+    /// <summary>Posições abertas e encerradas e a tendência de 30 dias das abertas — um cálculo só.
+    /// <paramref name="buscarCotacoesAgora"/>: busca as cotações do momento na hora (botão "Atualizar cotações").</summary>
+    Task<PainelPosicoesResponse> ObterPainelPosicoesAsync(bool buscarCotacoesAgora = false);
 
     /// <summary>Pregão, posição (ou resultado realizado), série diária, proventos, transações e eventos de um ativo. Nulo se não existe.</summary>
     Task<DetalheAtivoResponse?> ObterDetalheAtivoAsync(int ativoId);

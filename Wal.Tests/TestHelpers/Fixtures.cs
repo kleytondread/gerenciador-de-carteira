@@ -10,12 +10,18 @@ namespace Wal.Tests.TestHelpers;
 internal static class Fixtures
 {
     /// <summary>Cotações ao vivo fixas por ticker; sem argumento, nenhuma (a tela usa só o banco).</summary>
-    public static ICotacaoAoVivoService CotacoesAoVivo(Dictionary<string, YahooCotacaoAtual>? cotacoes = null)
+    public static Mock<ICotacaoAoVivoService> CotacoesAoVivoMock(
+        Dictionary<string, YahooCotacaoAtual>? cotacoes = null, DateTimeOffset? verificadasEm = null)
     {
         var servico = new Mock<ICotacaoAoVivoService>();
-        servico.Setup(s => s.ObterAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(cotacoes ?? []);
-        return servico.Object;
+        servico.Setup(s => s.ObterAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<bool>()))
+            .ReturnsAsync(new CotacoesAoVivo(cotacoes ?? [], verificadasEm));
+        return servico;
     }
+
+    public static ICotacaoAoVivoService CotacoesAoVivo(
+        Dictionary<string, YahooCotacaoAtual>? cotacoes = null, DateTimeOffset? verificadasEm = null) =>
+        CotacoesAoVivoMock(cotacoes, verificadasEm).Object;
 
     public static Ativo NovoAtivo(
         string ticker = "PETR4", string nome = "Petrobras PN", TipoAtivo tipo = TipoAtivo.Acao, bool estaAtivo = true) =>
